@@ -1,0 +1,14 @@
+10/24/23
+
+-Need to "explode" the parcel data
+-Need to drop blocks/parcels with zero population, or low population, but not sure at which point.
+-could I develop a composite mhps layer that is the best of both? Could I intersect the points with roads to filter/choose?
+ 
+-maybe before doing that find the double hits and compare versions
+-going to have to do the comparison before 
+
+-A consistent problem occurs when a county gov includes streets as parcels, then that particular county has a lot of mismatches.
+
+-Overall 684 MHPs in Colorado, regeocoded mhps got 468 matches, original got 242 matches. 210 mhps in common were matched in each version, but not always to the same parcel: 93 were different parcels. Visually inspected to see which was right: 58/93 original was correct; 18 regeocoded were correct; 17 were either both wrong, both right, or uncertain.
+
+-Next: find out which mhps matched in each version but did not match in the other. 

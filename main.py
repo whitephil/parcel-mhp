@@ -8,15 +8,17 @@ if __name__ == '__main__':
     import parcelfunks
     import os
 
-    stateFips = pd.read_csv(r'C:\Users\phwh9568\Data\ParcelAtlas\stateFips.csv', dtype={'STATEFP':str})
-    stateFipsList = stateFips['STATEFP'].tolist()
-    externalDrive = r'D:/'
-    pInventory = pd.read_csv(os.path.join(externalDrive,'parcelInventory.csv'), dtype={'STATE':str,'COUNTY':str})
+    #stateFips = pd.read_csv(r'C:\Users\phwh9568\Data\ParcelAtlas\stateFips.csv', dtype={'STATEFP':str})
+    #stateFipsList = stateFips['STATEFP'].tolist()
+    #externalDrive = r'E:/'
+    # THIS INVENTORY FILE IS WRONG!!!
+    #pInventory = pd.read_csv(os.path.join(externalDrive,'parcelInventory.csv'), dtype={'STATE':str,'COUNTY':str})
 
     # perhaps set up for loop first over stateFipsList here to form all paths? Or maybe run one state at a time.
     # Colorado:    
     CO_path = r'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022\Counties'
-    CO_pInventory = pInventory.loc[pInventory['STATE']=='08']
+    #CO_pInventory = pInventory.loc[pInventory['STATE']=='08']
+    CO_pInventory = pd.read_csv(r'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022\counties\ColoradoInventory.csv', dtype={'STATE':str,'COUNTY':str})
     CO_pInventory_True = CO_pInventory.loc[CO_pInventory['DATA_PRESENT']==True]
     CO_pInventory_False = CO_pInventory.loc[CO_pInventory['DATA_PRESENT']==False]
     CO_pInventory_False.to_csv(os.path.join(CO_path,'missingParcelData.csv'))
@@ -26,7 +28,8 @@ if __name__ == '__main__':
 
     
     ti = time.time()
-
+    '''
+    #regeocoded
     with Pool() as pool:
         pool.map(parcelfunks.parcelMHPJoin,parcelsPaths)
 
@@ -55,7 +58,40 @@ if __name__ == '__main__':
             stateFinalDF = pd.concat([stateFinalDF,countyDF])
             
     stateFinalDF.drop(stateFinalDF.filter(regex='Unnamed*').columns,axis=1, inplace=True)
-    stateFinalDF.to_csv(r'c:/users/phwh9568/data/parcelatlas/CO_2022/Colorado.csv')
+    stateFinalDF.to_csv(r'c:/users/phwh9568/data/parcelatlas/CO_2022/Colorado_regeocoded.csv')
+
+    '''
+    #original
+    with Pool() as pool:
+        pool.map(parcelfunks.parcelMHPJoin2,parcelsPaths)
+
+    print('Parcel-MHP Join Time:',time.time()-ti)
+    
+
+    ti = time.time()
+    
+    with Pool() as pool:
+        pool.map(parcelfunks.union_intersect2,parcelsPaths)
+    
+    print('MHParcels-Blocks Union Time:',time.time()-ti)
+    
+
+    ti = time.time()
+
+    with Pool() as pool:
+        pool.map(parcelfunks.mhp_union_merge2,parcelsPaths)
+
+    print('Table merge time:',time.time()-ti)
+    
+    stateFinalDF = pd.DataFrame()
+    for path in parcelsPaths:
+        if os.path.exists(os.path.join(path,'MHP_'+path.split('\\')[-1]+'_final2.csv')):
+            countyDF = pd.read_csv(os.path.join(path,'MHP_'+path.split('\\')[-1]+'_final2.csv'), dtype={'STATEFP10':str,'COUNTYFP10':str,'TRACTCE10':str,'BLOCKCE10':str,'GEOID10':str,'MTFCC10':str,'UACE10':str,'GEOID10':str,'GEOID10':str, 'MH_COUNTY_FIPS':str, 'MHPID':str})
+            stateFinalDF = pd.concat([stateFinalDF,countyDF])
+            
+    stateFinalDF.drop(stateFinalDF.filter(regex='Unnamed*').columns,axis=1, inplace=True)
+    stateFinalDF.to_csv(r'c:/users/phwh9568/data/parcelatlas/CO_2022/Colorado_original2.csv')
+    
     
     print('Done.')
     print('Total time:', time.time()-start)
