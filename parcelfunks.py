@@ -2,6 +2,8 @@ import os
 import geopandas as gpd
 import pandas as pd
 import csv
+import numpy as np
+from scipy import stats
 
 mhomesPath = r'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022\08_MHPs.gpkg'
 mhomesPath2 = r'C:\Users\phwh9568\Data\ParcelAtlas\Mobile_Home_Parks\MobileHomeParks.shp'
@@ -11,6 +13,12 @@ exceptPath = r'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022\exceptions.csv'
 with open(exceptPath, 'w', newline='', encoding='utf-8') as f:
     writer = csv.writer(f)
     writer.writerow(['COUNTY_FIPS','PROBLEM'])
+
+def geomLen(geom):
+    return len(geom.exterior.xy[0])
+
+def geomZscore(geom):
+    return stats.zscore(len(geom.exterior.xy[0]))
 
 # NEED to iterate over fips independent of folder structure to account for missing counties
 # need to keep track of missing parcel data DONE
@@ -41,6 +49,10 @@ def parcelMHPJoin(pFilePath):
         parcel = gpd.read_file(os.path.join(pFilePath,'parcels.shp'))
         parcel.drop_duplicates(subset=['APN'], inplace=True)
         parcel = parcel.explode(index_parts=False)
+        parcel['polyLen'] = parcel.apply(lambda row: geomLen(row.geometry), axis=1)
+        parcel['geomZscore'] = np.abs(stats.zscore(parcel['polyLen']))
+        parcel.drop(parcel[parcel.geomZscore > 3].index, inplace=True) #dropping outlier geometries
+        parcel.reset_index(inplace=True)
         columns = ['APN', 'APN2', 'geometry']
         drops = [c for c in parcel.columns if c not in columns]
         parcel.drop(drops, axis=1, inplace=True)        
@@ -49,8 +61,9 @@ def parcelMHPJoin(pFilePath):
             parcel.to_crs(mobileHomes.crs, inplace=True)
         phomes = gpd.sjoin(parcel,mobileHomes)
         phomes.drop('index_right', axis=1, inplace=True)
-        if len(phomes) > 0:
-            phomes.to_file(os.path.join(pFilePath,fips+'.gpkg'),driver='GPKG', layer='MH_parcels')
+        phomesAlbers = phomes.to_crs(crs='ESRI:102003')
+        if len(phomesAlbers) > 0:
+            phomesAlbers.to_file(os.path.join(pFilePath,fips+'.gpkg'),driver='GPKG', layer='MH_parcels')
         else:
             with open(exceptPath, 'a', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
@@ -67,9 +80,9 @@ def blocks_prepper(blocksPath):
 def union_intersect(pFilePath):
     fips = pFilePath.split('\\')[-1]
     if os.path.exists(os.path.join(pFilePath,fips+'.gpkg')) == True:
-        phomes = gpd.read_file(os.path.join(pFilePath,fips+'.gpkg'), layer='MH_parcels')         
+        phomesAlbers = gpd.read_file(os.path.join(pFilePath,fips+'.gpkg'), layer='MH_parcels')         
         blocksAlbers = gpd.read_file(os.path.join(pFilePath,fips+'_blocks.gpkg'), layer=fips+'_blocks')
-        phomesAlbers = phomes.to_crs(blocksAlbers.crs)
+        #phomesAlbers = phomes.to_crs(blocksAlbers.crs)
         union = blocksAlbers.overlay(phomesAlbers, how='intersection')
         union['unionArea_m'] = union['geometry'].area
         union['blockParcel_ratio'] = (union['unionArea_m']/union['blockArea_m']) *100
@@ -124,6 +137,10 @@ def parcelMHPJoin2(pFilePath):
         parcel = gpd.read_file(os.path.join(pFilePath,'parcels.shp'))
         parcel.drop_duplicates(subset=['APN'], inplace=True)
         parcel = parcel.explode(index_parts=False)
+        parcel['polyLen'] = parcel.apply(lambda row: geomLen(row.geometry), axis=1)
+        parcel['geomZscore'] = np.abs(stats.zscore(parcel['polyLen']))
+        parcel.drop(parcel[parcel.geomZscore > 3].index, inplace=True) #dropping outlier geometries
+        parcel.reset_index(inplace=True)
         columns = ['APN', 'APN2', 'geometry']
         drops = [c for c in parcel.columns if c not in columns]
         parcel.drop(drops, axis=1, inplace=True)        
@@ -132,8 +149,9 @@ def parcelMHPJoin2(pFilePath):
             parcel.to_crs(mobileHomes.crs, inplace=True)
         phomes = gpd.sjoin(parcel,mobileHomes)
         phomes.drop('index_right', axis=1, inplace=True)
-        if len(phomes) > 0:
-            phomes.to_file(os.path.join(pFilePath,pFilePath.split('\\')[-1]+'2.gpkg'),driver='GPKG', layer='MH_parcels')
+        phomesAlbers = phomes.to_crs(crs='ESRI:102003')
+        if len(phomesAlbers) > 0:
+            phomesAlbers.to_file(os.path.join(pFilePath,pFilePath.split('\\')[-1]+'2.gpkg'),driver='GPKG', layer='MH_parcels')
         else:
             with open(exceptPath, 'a', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
@@ -142,9 +160,9 @@ def parcelMHPJoin2(pFilePath):
 def union_intersect2(pFilePath):
     fips = pFilePath.split('\\')[-1]
     if os.path.exists(os.path.join(pFilePath,fips+'2.gpkg')) == True:
-        phomes = gpd.read_file(os.path.join(pFilePath,fips+'2.gpkg'), layer='MH_parcels')         
+        phomesAlbers = gpd.read_file(os.path.join(pFilePath,fips+'2.gpkg'), layer='MH_parcels')         
         blocksAlbers = gpd.read_file(os.path.join(pFilePath,fips+'_blocks.gpkg'), layer=fips+'_blocks')
-        phomesAlbers = phomes.to_crs(blocksAlbers.crs)
+        #phomesAlbers = phomes.to_crs(blocksAlbers.crs)
         union = blocksAlbers.overlay(phomesAlbers, how='intersection')
         union['unionArea_m'] = union['geometry'].area
         union['blockParcel_ratio'] = (union['unionArea_m']/union['blockArea_m']) *100

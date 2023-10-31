@@ -91,8 +91,7 @@ if __name__ == '__main__':
             
     stateFinalDF.drop(stateFinalDF.filter(regex='Unnamed*').columns,axis=1, inplace=True)
     stateFinalDF.to_csv(r'c:/users/phwh9568/data/parcelatlas/CO_2022/Colorado_original2.csv')
-    
-    
+      
     print('Done.')
     print('Total time:', time.time()-start)
 

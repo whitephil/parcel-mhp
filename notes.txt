@@ -9,6 +9,23 @@
 
 -A consistent problem occurs when a county gov includes streets as parcels, then that particular county has a lot of mismatches.
 
--Overall 684 MHPs in Colorado, regeocoded mhps got 468 matches, original got 242 matches. 210 mhps in common were matched in each version, but not always to the same parcel: 93 were different parcels. Visually inspected to see which was right: 58/93 original was correct; 18 regeocoded were correct; 17 were either both wrong, both right, or uncertain.
 
 -Next: find out which mhps matched in each version but did not match in the other. 
+
+
+-what if I dropped all rows of the parcel data where length of the geometry exceeds some typical amount? This may help get rid of roads.... DID This and worked.
+
+Next:
+
+
+
+Redo the compare versions for DOUBLE HITS (same mhp same parcel), DIFFERENCES (same mhp different parcel); UNIQUES (mhps parcels not in the other dataset), NON-MATCH mhps
+
+-Overall 684 MHPs in Colorado, regeocoded mhps got 442 matches, original got 211 matches. 178 mhps in common were matched in each version, but not always to the same parcel: 72 were DIFFERENCES, 106 DOUBLE HITS. (These were found by merging). **NOTE REDO THIS** 58/93 original was correct; 18 regeocoded were correct; 17 were either both wrong, both right, or uncertain.
+
+UNIQUES: 300 UNIQUES overall, 264 UNIQUE mhp matches in regeocoded data, 36 UNIQUE mhp matches in original data.
+
+NON-MATCH: 209 not matched by either version. 
+
+
+
