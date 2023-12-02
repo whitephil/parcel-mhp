@@ -21,11 +21,53 @@ Next:
 
 Redo the compare versions for DOUBLE HITS (same mhp same parcel), DIFFERENCES (same mhp different parcel); UNIQUES (mhps parcels not in the other dataset), NON-MATCH mhps
 
--Overall 684 MHPs in Colorado, regeocoded mhps got 442 matches, original got 211 matches. 178 mhps in common were matched in each version, but not always to the same parcel: 72 were DIFFERENCES, 106 DOUBLE HITS. (These were found by merging). **NOTE REDO THIS** 58/93 original was correct; 18 regeocoded were correct; 17 were either both wrong, both right, or uncertain.
+-Overall 684 MHPs in Colorado, regeocoded mhps got 442 matches, original got 211 matches. 178 mhps in common were matched in each version, but not always to the same parcel: 72 were DIFFERENCES, 106 DOUBLE HITS. (These were found by merging). 52/72 original was correct; 7 regeocoded were correct; 7 were either both wrong, 6 both right. 
+** Originals most often correct... maybe start w/ originals then supplement with regeocoded?
+
+Next: examine regeocoded uniques?
 
 UNIQUES: 300 UNIQUES overall, 264 UNIQUE mhp matches in regeocoded data, 36 UNIQUE mhp matches in original data.
 
 NON-MATCH: 209 not matched by either version. 
 
 
+11/2/23
+********
+Reviewed the accuracy of regeocoded mhp-parcels and original mhp-parcels:
+Original much more accurate!
+
+Regeocoded had 442 matches, but 190 of them were wrong, making a 57% accuracy rate
+
+Original had 211 matches, but only 25 were wrong! 88% accuracy rate
+
+Among the unique regeocoded MHP-parcels (mhp-parcel not matched using the original data but matched in the regeocoded), 130 out of 264 were WRONG, only 50% match rate. So these weren't accurately matched anyway. 
+
+However, of the 684 MHPs, 211 matched (88% accurate). That's only 30%. (or 186 matched/27% if you account for accuracy rate)
+
+11/29/23
+*********
+
+Changed strategy to using a near join. This works better, however, I've discovered that 
+that the geometry length zscore filtering method is sometimes removing good ones
+and leaving in bad ones. Need to refine this before I can really determine
+how well the near is working.
+
+For tomorrow: try simplifying geometries prior to calculating the geometry length zscore
+
+What's going on with Larimer county???
+Add a line to drop dupes based on apn2 if apn1 is null? no
+dedupe based on geometry column? <<<Did this
+
+12/1/23
+********
+Yesterday figured out how incorporate interior geometries and use that as a filtering mechanism 
+(get rid of street grids)
+
+Today worked on integrating microsoft buildings data. 
+-split data I already have into correct directories
+-created a summarize within function to count buildigns within parcels, 
+-incorporated this into parcelMHPJoin function
+-discovered that broomfield county was missing (08014). 
+-My source data for county fips and county names was old!!!
+-Fix Monday, then continue evaluating if buildings can be used
 
