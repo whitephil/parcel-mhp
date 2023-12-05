@@ -7,7 +7,15 @@ if __name__ == '__main__':
     import pandas as pd
     import parcelfunks
     import os
+    import warnings
+    import winsound
 
+    def fxn():
+        warnings.warn("deprecated", RuntimeWarning)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        fxn()
     #stateFips = pd.read_csv(r'C:\Users\phwh9568\Data\ParcelAtlas\stateFips.csv', dtype={'STATEFP':str})
     #stateFipsList = stateFips['STATEFP'].tolist()
     #externalDrive = r'E:/'
@@ -59,7 +67,8 @@ if __name__ == '__main__':
             
     stateFinalDF.drop(stateFinalDF.filter(regex='Unnamed*').columns,axis=1, inplace=True)
     stateFinalDF.to_csv(r'c:/users/phwh9568/data/parcelatlas/CO_2022/Colorado_Final_original_near.csv')
-      
+
+    winsound.Beep(450, 1000)  
     print('Done.')
     print('Total time:', time.time()-start)
 

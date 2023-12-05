@@ -71,3 +71,37 @@ Today worked on integrating microsoft buildings data.
 -My source data for county fips and county names was old!!!
 -Fix Monday, then continue evaluating if buildings can be used
 
+12/4/23
+********
+Got buildings successfully incorporated, and now used to filter.
+Steps: 
+1) drop all parcels w/ interior geom length greater than 20
+2) drop all parcels where external geometry Z score > 3 AND sumWithin (buildings count) < 10
+
+This is working well
+
+To do tomorrow:
+-investigate all parcels w/ zero sum_Within
+-select double hits based on sum_within or nearest or some combination
+-email Emily
+-email Kevin Worthington
+
+
+12/5/23
+
+-trying to determine criteria for deciding which parcel to keep
+-increase near distance to 10 (perhaps examine a second round of results at 15 m)
+-choose the one with buildings--at least 2
+-if no double hit, just leave it in(?) TBD... or perhaps not. Ask Emily?
+-if both (or multiple) have a lot of buildigs, keep both
+-if both zero buildings, drop both
+-should just drop all parcels w/ zero buidings?
+
+-Got rid of all 0s, compared all double hits and selected the one
+with the most buildings, dropped all remaining 1s.
+
+-95% correct!
+
+
+
+

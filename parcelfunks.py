@@ -5,6 +5,16 @@ import csv
 import numpy as np
 from scipy import stats
 
+#temporarily silence runtimewarning
+import warnings
+
+def fxn():
+    warnings.warn("deprecated", RuntimeWarning)
+
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    fxn()
+
 mhomesPath = r'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022\08_MHPs.gpkg'
 mhomesPath2 = r'C:\Users\phwh9568\Data\ParcelAtlas\Mobile_Home_Parks\MobileHomeParks.shp'
 blocksPath = r'C:\Users\phwh9568\Data\Census2020\tl_2020_08_all\tl_2020_08_tabblock10.shp'
@@ -34,7 +44,7 @@ def geomLen(geom):
     interior = sum([len(g.xy[0]) for g in geom.interiors]) if len(geom.interiors) > 0 else 0
     return exterior+interior
 
-def sumWithin(df1,df2):
+def sumWithin(fips,df1,df2):
     #bespoke, only works with this data... but could be modified to be more flexible
     df1['ID'] = df1.index
     cols = df1.columns.to_list()
@@ -43,9 +53,14 @@ def sumWithin(df1,df2):
     dfsjoin = gpd.sjoin(df1,df2,predicate='contains')
     dfpivot = pd.pivot_table(dfsjoin,index=['ID','APN'], aggfunc={'FID':len}).reset_index()
     dfpolynew = df1.merge(dfpivot, how='left', on='ID')
-    dfpolynew.rename({'APN_x':'APN', 'FID': 'Sum_Within'}, axis='columns',inplace=True)
-    dfpolynew['Sum_Within'].fillna(0, inplace=True)
-    dfpolynew.drop(['ID','APN_y'], axis=1, inplace=True)
+    if 'FID' in dfpolynew:
+        dfpolynew.rename({'APN_x':'APN', 'FID': 'Sum_Within'}, axis='columns',inplace=True)
+        dfpolynew['Sum_Within'].fillna(0, inplace=True)
+        dfpolynew.drop(['ID','APN_y'], axis=1, inplace=True)
+    else:
+        dfpolynew.rename({'APN_x':'APN'}, axis='columns',inplace=True)
+        dfpolynew['Sum_Within'] = 0
+        dfpolynew.drop(['ID','APN_y'], axis=1, inplace=True)                
     return dfpolynew
 
 # NOT BEING USED DELETE THIS
@@ -80,7 +95,7 @@ def parcelMHPJoin(pFilePath):
         parcel = parcel.explode(index_parts=False)
         buildings = gpd.read_file(os.path.join(pFilePath,fips+'_buildings.shp'))
         buildings.to_crs(crs='ESRI:102003', inplace=True)
-        parcel = sumWithin(parcel,buildings)
+        parcel = sumWithin(fips,parcel,buildings)
         parcel['geometry'] = parcel['geometry'].simplify(1)
         parcel['intLen'] = parcel.apply(lambda row: interiorLen(row.geometry), axis=1)
         parcel['intZscore'] = np.abs(stats.zscore(parcel['intLen']))
@@ -88,8 +103,9 @@ def parcelMHPJoin(pFilePath):
         parcel.reset_index(inplace=True)
         parcel['extLen1'] = parcel.apply(lambda row: exteriorLen(row.geometry), axis=1)
         parcel['extZscore1'] = np.abs(stats.zscore(parcel['extLen1']))
-        #parcel.drop(parcel[parcel.geomZscore1 > 10].index, inplace=True) #dropping outlier geometries
-        #parcel.reset_index(inplace=True)
+        parcel.drop(parcel[(parcel['extZscore1'] > 3) & (parcel['Sum_Within'] < 10)].index, inplace=True) #dropping outlier geometries
+        parcel.drop(parcel[parcel['Sum_Within'] < 1].index, inplace=True)
+        parcel.reset_index(inplace=True)
         #parcel['geometry'] = parcel['geometry'].simplify(3)
         #parcel['polyLen2'] = parcel.apply(lambda row: geomLen(row.geometry), axis=1)
         #parcel['geomZscore2'] = np.abs(stats.zscore(parcel['polyLen2']))
@@ -102,9 +118,11 @@ def parcelMHPJoin(pFilePath):
         mobileHomes.to_crs(crs='ESRI:102003', inplace=True)
         if parcel.crs != mobileHomes.crs:
             parcel.to_crs(mobileHomes.crs, inplace=True)
-        phomes = gpd.sjoin_nearest(parcel, mobileHomes, max_distance=5.0, distance_col='distances')
+        phomes = gpd.sjoin_nearest(parcel, mobileHomes, max_distance=10.0, distance_col='distances')
         phomes.drop('index_right', axis=1, inplace=True)
-        #phomes = phomes.sort_values(['MHPID','distances']).drop_duplicates(subset=['MHPID'], keep='first')
+        phomes = phomes.sort_values(['MHPID','Sum_Within'], ascending=False).drop_duplicates(subset=['MHPID'], keep='first')
+        phomes.drop(phomes[phomes['Sum_Within'] < 2].index, inplace=True)
+
         #phomes['polyLen2'] = phomes.apply(lambda row: geomLen(row.geometry), axis=1)
         #phomes['geomZscore3'] = np.abs(stats.zscore(phomes['polyLen2']))
         #phomesAlbers = phomes.to_crs(crs='ESRI:102003')
