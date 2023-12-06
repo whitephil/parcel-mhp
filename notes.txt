@@ -102,6 +102,12 @@ with the most buildings, dropped all remaining 1s.
 
 -95% correct!
 
+12/6/23
+********
+
+-multipart polygon rabbit hole
+-tomorrow: check differences between explode results and multipart results
+
 
 
 

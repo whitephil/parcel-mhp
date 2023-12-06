@@ -28,13 +28,20 @@ def interiorLen(geom):
     '''
     sum of interior points in a polygon
     '''
-    return sum([len(g.xy[0]) for g in geom.interiors]) if len(geom.interiors) > 0 else 0
+    if geom.geom_type == 'Polygon':
+        return sum([len(g.xy[0]) for g in geom.interiors]) if len(geom.interiors) > 0 else 0
+    if geom.geom_type == 'MultiPolygon':
+        multiGeoms = geom.geoms
+        return sum([sum([len(g.xy[0]) for g in mg.interiors]) if len(mg.interiors) else 0 for mg in multiGeoms])
 
 def exteriorLen(geom):
     '''
     sum of exterior points in a polygon
     '''
-    return len(geom.exterior.xy[0])
+    if geom.geom_type == 'Polygon':
+        return len(geom.exterior.xy[0])
+    if geom.geom_type == 'MultiPolygon':
+        return sum([len(g.exterior.xy[0]) for g in geom.geoms])
 
 def geomLen(geom):
     '''
@@ -93,6 +100,8 @@ def parcelMHPJoin(pFilePath):
         parcel.to_crs(crs='ESRI:102003', inplace=True)
         parcel.drop_duplicates(subset=['geometry'], inplace=True)
         parcel = parcel.explode(index_parts=False)
+        parcel.reset_index(inplace=True)
+        parcel.drop(['index'],axis=1,inplace=True)
         buildings = gpd.read_file(os.path.join(pFilePath,fips+'_buildings.shp'))
         buildings.to_crs(crs='ESRI:102003', inplace=True)
         parcel = sumWithin(fips,parcel,buildings)
@@ -106,11 +115,6 @@ def parcelMHPJoin(pFilePath):
         parcel.drop(parcel[(parcel['extZscore1'] > 3) & (parcel['Sum_Within'] < 10)].index, inplace=True) #dropping outlier geometries
         parcel.drop(parcel[parcel['Sum_Within'] < 1].index, inplace=True)
         parcel.reset_index(inplace=True)
-        #parcel['geometry'] = parcel['geometry'].simplify(3)
-        #parcel['polyLen2'] = parcel.apply(lambda row: geomLen(row.geometry), axis=1)
-        #parcel['geomZscore2'] = np.abs(stats.zscore(parcel['polyLen2']))
-        #parcel.drop(parcel[parcel.geomZscore > 3].index, inplace=True) #dropping outlier geometries
-        #parcel.reset_index(inplace=True)
         columns = ['APN', 'APN2', 'intLen','intZscore', 'extLen1','extZscore1', 'Sum_Within','geometry']
         drops = [c for c in parcel.columns if c not in columns]
         parcel.drop(drops, axis=1, inplace=True)        
@@ -122,16 +126,54 @@ def parcelMHPJoin(pFilePath):
         phomes.drop('index_right', axis=1, inplace=True)
         phomes = phomes.sort_values(['MHPID','Sum_Within'], ascending=False).drop_duplicates(subset=['MHPID'], keep='first')
         phomes.drop(phomes[phomes['Sum_Within'] < 2].index, inplace=True)
-
-        #phomes['polyLen2'] = phomes.apply(lambda row: geomLen(row.geometry), axis=1)
-        #phomes['geomZscore3'] = np.abs(stats.zscore(phomes['polyLen2']))
-        #phomesAlbers = phomes.to_crs(crs='ESRI:102003')
         if len(phomes) > 0:
             phomes.to_file(os.path.join(pFilePath,pFilePath.split('\\')[-1]+'.gpkg'),driver='GPKG', layer='MH_parcels')
         else:
             with open(exceptPath, 'a', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 writer.writerow([pFilePath.split('\\')[-1],'NO JOIN'])
+
+    def parcelMHPJoin2(pFilePath):
+        fips = pFilePath.split('\\')[-1]
+        mhpPath = os.path.join(pFilePath,fips+'_mhps_OG.gpkg')
+        if os.path.exists(mhpPath):
+            parcel = gpd.read_file(os.path.join(pFilePath,'parcels.shp'))
+            parcel.to_crs(crs='ESRI:102003', inplace=True)
+            parcel.drop_duplicates(subset=['geometry'], inplace=True)
+            #parcel = parcel.explode(index_parts=False)
+            #parcel.reset_index(inplace=True)
+            #parcel.drop(['index'],axis=1,inplace=True)
+            buildings = gpd.read_file(os.path.join(pFilePath,fips+'_buildings.shp'))
+            buildings.to_crs(crs='ESRI:102003', inplace=True)
+            parcel = sumWithin(fips,parcel,buildings)
+            parcel['geometry'] = parcel['geometry'].simplify(1)
+            parcel['intLen'] = parcel.apply(lambda row: interiorLen(row.geometry), axis=1)
+            parcel['intZscore'] = np.abs(stats.zscore(parcel['intLen']))
+            parcel.drop(parcel[parcel.intLen >= 20].index, inplace=True) #dropping outlier inner geometries
+            parcel.reset_index(inplace=True)
+            parcel['extLen1'] = parcel.apply(lambda row: exteriorLen(row.geometry), axis=1)
+            parcel['extZscore1'] = np.abs(stats.zscore(parcel['extLen1']))
+            parcel.drop(parcel[(parcel['extZscore1'] > 3) & (parcel['Sum_Within'] < 10)].index, inplace=True) #dropping outlier geometries
+            parcel.drop(parcel[parcel['Sum_Within'] < 1].index, inplace=True)
+            parcel.reset_index(inplace=True)
+            columns = ['APN', 'APN2', 'intLen','intZscore', 'extLen1','extZscore1', 'Sum_Within','geometry']
+            drops = [c for c in parcel.columns if c not in columns]
+            parcel.drop(drops, axis=1, inplace=True)        
+            mobileHomes = gpd.read_file(mhpPath)
+            mobileHomes.to_crs(crs='ESRI:102003', inplace=True)
+            if parcel.crs != mobileHomes.crs:
+                parcel.to_crs(mobileHomes.crs, inplace=True)
+            phomes = gpd.sjoin_nearest(parcel, mobileHomes, max_distance=10.0, distance_col='distances')
+            phomes.drop('index_right', axis=1, inplace=True)
+            phomes = phomes.sort_values(['MHPID','Sum_Within'], ascending=False).drop_duplicates(subset=['MHPID'], keep='first')
+            phomes.drop(phomes[phomes['Sum_Within'] < 2].index, inplace=True)
+            if len(phomes) > 0:
+                phomes.to_file(os.path.join(pFilePath,pFilePath.split('\\')[-1]+'.gpkg'),driver='GPKG', layer='MH_parcels')
+            else:
+                with open(exceptPath, 'a', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([pFilePath.split('\\')[-1],'NO JOIN'])
+
 
 def union_intersect(pFilePath):
     fips = pFilePath.split('\\')[-1]
