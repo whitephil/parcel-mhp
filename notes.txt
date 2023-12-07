@@ -108,6 +108,16 @@ with the most buildings, dropped all remaining 1s.
 -multipart polygon rabbit hole
 -tomorrow: check differences between explode results and multipart results
 
+12/7/23
+********
+Examined multipart vs exploded: Multipart is better!
+
+expanded near join to 15m, need to examine the results more closely:
+-split off matches from 15m join that were not matched in 10m join
+
+-oddly, it seems that when I combine the mh-parcel files into one state wide file,
+it stores all geometries as multigeometry. I don't know why.
+
 
 
 

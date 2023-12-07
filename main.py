@@ -9,13 +9,14 @@ if __name__ == '__main__':
     import os
     import warnings
     import winsound
-
+    '''
     def fxn():
         warnings.warn("deprecated", RuntimeWarning)
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         fxn()
+    '''
     #stateFips = pd.read_csv(r'C:\Users\phwh9568\Data\ParcelAtlas\stateFips.csv', dtype={'STATEFP':str})
     #stateFipsList = stateFips['STATEFP'].tolist()
     #externalDrive = r'E:/'
@@ -39,7 +40,7 @@ if __name__ == '__main__':
 
     #original
     with Pool() as pool:
-        pool.map(parcelfunks.parcelMHPJoin,parcelsPaths)
+        pool.map(parcelfunks.parcelMHPJoin2,parcelsPaths)
 
     print('Parcel-MHP Join Time:',time.time()-ti)
     
@@ -61,12 +62,12 @@ if __name__ == '__main__':
     
     stateFinalDF = pd.DataFrame()
     for path in parcelsPaths:
-        if os.path.exists(os.path.join(path,'MHP_'+path.split('\\')[-1]+'_final_near.csv')):
-            countyDF = pd.read_csv(os.path.join(path,'MHP_'+path.split('\\')[-1]+'_final_near.csv'), dtype={'STATEFP10':str,'COUNTYFP10':str,'TRACTCE10':str,'BLOCKCE10':str,'GEOID10':str,'MTFCC10':str,'UACE10':str,'GEOID10':str,'GEOID10':str, 'MH_COUNTY_FIPS':str, 'MHPID':str})
+        if os.path.exists(os.path.join(path,'MHP_'+path.split('\\')[-1]+'_final_multi15.csv')):
+            countyDF = pd.read_csv(os.path.join(path,'MHP_'+path.split('\\')[-1]+'_final_multi15.csv'), dtype={'STATEFP10':str,'COUNTYFP10':str,'TRACTCE10':str,'BLOCKCE10':str,'GEOID10':str,'MTFCC10':str,'UACE10':str,'GEOID10':str,'GEOID10':str, 'MH_COUNTY_FIPS':str, 'MHPID':str})
             stateFinalDF = pd.concat([stateFinalDF,countyDF])
             
     stateFinalDF.drop(stateFinalDF.filter(regex='Unnamed*').columns,axis=1, inplace=True)
-    stateFinalDF.to_csv(r'c:/users/phwh9568/data/parcelatlas/CO_2022/Colorado_Final_original_near.csv')
+    stateFinalDF.to_csv(r'c:/users/phwh9568/data/parcelatlas/CO_2022/Colorado_Final_original_near_multi15.csv')
 
     winsound.Beep(450, 1000)  
     print('Done.')
