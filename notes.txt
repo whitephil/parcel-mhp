@@ -119,5 +119,31 @@ expanded near join to 15m, need to examine the results more closely:
 it stores all geometries as multigeometry. I don't know why.
 
 
+For 12/12/23
+********
+-Drop all parcels w/ fewer than 5 buildings. *all of the matches with 4 were wrong half the time.
+-see what the match rate is when accounting for counties where parcel data is missing
+-need to figure out warnings.
 
+Questions for Emily:
+Leave in duplicate geometries? (that is, when 2 points match with the same parcel)
+How many mobile homes qualifies a parcel as an MHP? (< 30, but I'll start w/ 20)
 
+To do:
+Work on filtering mechanism when there are parcels matched with multiple mhps.
+
+12/13/23
+*********
+
+Turned out the filtering mechanism was not really the place to address the
+problem of wrong matches for right reason. This all stemmed from the duplicate geometries question.
+
+Ended up reworking the near join process, breaking things up into smaller functions as well
+-Turns out the near was going the opposite direction than I though (parcel to mhp), 
+-switched to mhp-parcel nearest, then joined them back to parcel with just a table join
+-then took the unmatched and did a parcel-mhp nearest to grab the results
+-then concatted the first join and second join
+-same results (well, slightly improved) but no more 'right for the wrong reason' matches.
+
+Tomorrow: select only medium+ (20 or 30 minimum), carry over some more columns from original mhp data
+into final data.

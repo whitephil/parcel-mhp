@@ -52,22 +52,26 @@ def geomLen(geom):
     interior = sum([len(g.xy[0]) for g in geom.interiors]) if len(geom.interiors) > 0 else 0
     return exterior+interior
 
-def sumWithin(fips,df1,df2):
+def sumWithin(df1,df2):
     #bespoke, only works with this data... but could be modified to be more flexible
+    # df1 should be parcels, df2 shoudl be buildings
     df1['ID'] = df1.index
     cols = df1.columns.to_list()
     cols = [cols[-1]] + cols[:-1]
     df1 = df1[cols]
+    df2['areas'] = df2['geometry'].area
     dfsjoin = gpd.sjoin(df1,df2,predicate='contains')
-    dfpivot = pd.pivot_table(dfsjoin,index=['ID','APN'], aggfunc={'FID':len}).reset_index()
+    dfpivot = pd.pivot_table(dfsjoin,index=['ID','APN'], aggfunc={'FID':len,'areas':'mean'}).reset_index()
     dfpolynew = df1.merge(dfpivot, how='left', on='ID')
     if 'FID' in dfpolynew:
-        dfpolynew.rename({'APN_x':'APN', 'FID': 'Sum_Within'}, axis='columns',inplace=True)
+        dfpolynew.rename({'APN_x':'APN', 'FID': 'Sum_Within', 'areas':'mnBlgArea'}, axis='columns',inplace=True)
         dfpolynew['Sum_Within'].fillna(0, inplace=True)
+        dfpolynew['mnBlgArea'].fillna(0, inplace=True)
         dfpolynew.drop(['ID','APN_y'], axis=1, inplace=True)
     else:
         dfpolynew.rename({'APN_x':'APN'}, axis='columns',inplace=True)
         dfpolynew['Sum_Within'] = 0
+        dfpolynew['mnBlgArea'] = 0
         dfpolynew.drop(['ID','APN_y'], axis=1, inplace=True)                
     return dfpolynew
 
@@ -91,7 +95,43 @@ def mhomes_prepper(mhomesPath):
     mhomes.rename(renames, axis='columns',inplace=True)
     return mhomes
 
-#mobileHomes = mhomes_prepper2(mhomesPath2)
+def parcelPreSelect(parcel,buildings):
+    parcel.drop_duplicates(subset=['geometry'], inplace=True)
+    parcel = sumWithin(parcel,buildings)
+    parcel['geometry'] = parcel['geometry'].simplify(1)
+    parcel['intLen'] = parcel.apply(lambda row: interiorLen(row.geometry), axis=1)
+    parcel['intZscore'] = np.abs(stats.zscore(parcel['intLen']))
+    parcel.drop(parcel[parcel.intLen >= 20].index, inplace=True) #dropping outlier inner geometries
+    parcel.reset_index(inplace=True)
+    parcel['extLen1'] = parcel.apply(lambda row: exteriorLen(row.geometry), axis=1)
+    parcel['extZscore1'] = np.abs(stats.zscore(parcel['extLen1']))
+    parcel.drop(parcel[(parcel['extZscore1'] > 3) & (parcel['Sum_Within'] < 10)].index, inplace=True) #dropping outlier geometries
+    parcel.drop(parcel[parcel['Sum_Within'] < 5].index, inplace=True) #change to 20 or 30 later
+    parcel.drop(parcel[parcel['mnBlgArea'] > 175].index, inplace=True)
+    parcel.reset_index(inplace=True)
+    columns = ['APN', 'APN2', 'intLen','intZscore', 'extLen1','extZscore1', 'Sum_Within', 'mnBlgArea', 'geometry']
+    drops = [c for c in parcel.columns if c not in columns]
+    parcel.drop(drops, axis=1, inplace=True)
+    return parcel
+
+
+def nearSelect(parcel, mobileHomes):
+    cols = parcel.columns
+    parcel['tempID'] = parcel.index
+    mhps_parcels_near = gpd.sjoin_nearest(mobileHomes,parcel,max_distance=100, distance_col='distances')
+    mhps_parcels_near.drop(cols, axis=1, inplace=True)
+    merged = parcel.merge(mhps_parcels_near, on='tempID')
+    merged.drop(['index_right'], axis=1, inplace=True)
+    merged = merged.sort_values(['tempID','distances']).drop_duplicates(subset=['tempID'], keep='first')
+    parcel['IDcheck'] = parcel['tempID'].isin(merged['tempID'].to_list())
+    unmatched = parcel.loc[parcel['IDcheck']==False]
+    secondJoin = gpd.sjoin_nearest(unmatched, mobileHomes, max_distance=150.0, distance_col='distances')
+    secondJoin.drop('index_right',axis=1,inplace=True)
+    concatted = pd.concat([merged,secondJoin])
+    concatted.drop(['tempID'], axis=1, inplace=True)
+    return concatted
+
+
 
 def parcelMHPJoin(pFilePath):    
     fips = pFilePath.split('\\')[-1]
@@ -99,40 +139,20 @@ def parcelMHPJoin(pFilePath):
     if os.path.exists(mhpPath):
         parcel = gpd.read_file(os.path.join(pFilePath,'parcels.shp'))
         parcel.to_crs(crs='ESRI:102003', inplace=True)
-        parcel.drop_duplicates(subset=['geometry'], inplace=True)
-        parcel = parcel.explode(index_parts=False)
-        parcel.reset_index(inplace=True)
-        parcel.drop(['index'],axis=1,inplace=True)
         buildings = gpd.read_file(os.path.join(pFilePath,fips+'_buildings.shp'))
         buildings.to_crs(crs='ESRI:102003', inplace=True)
-        parcel = sumWithin(fips,parcel,buildings)
-        parcel['geometry'] = parcel['geometry'].simplify(1)
-        parcel['intLen'] = parcel.apply(lambda row: interiorLen(row.geometry), axis=1)
-        parcel['intZscore'] = np.abs(stats.zscore(parcel['intLen']))
-        parcel.drop(parcel[parcel.intLen >= 20].index, inplace=True) #dropping outlier inner geometries
-        parcel.reset_index(inplace=True)
-        parcel['extLen1'] = parcel.apply(lambda row: exteriorLen(row.geometry), axis=1)
-        parcel['extZscore1'] = np.abs(stats.zscore(parcel['extLen1']))
-        parcel.drop(parcel[(parcel['extZscore1'] > 3) & (parcel['Sum_Within'] < 10)].index, inplace=True) #dropping outlier geometries
-        parcel.drop(parcel[parcel['Sum_Within'] < 1].index, inplace=True)
-        parcel.reset_index(inplace=True)
-        columns = ['APN', 'APN2', 'intLen','intZscore', 'extLen1','extZscore1', 'Sum_Within','geometry']
-        drops = [c for c in parcel.columns if c not in columns]
-        parcel.drop(drops, axis=1, inplace=True)        
         mobileHomes = gpd.read_file(mhpPath)
         mobileHomes.to_crs(crs='ESRI:102003', inplace=True)
-        if parcel.crs != mobileHomes.crs:
-            parcel.to_crs(mobileHomes.crs, inplace=True)
-        phomes = gpd.sjoin_nearest(parcel, mobileHomes, max_distance=10.0, distance_col='distances')
-        phomes.drop('index_right', axis=1, inplace=True)
-        phomes = phomes.sort_values(['MHPID','Sum_Within'], ascending=False).drop_duplicates(subset=['MHPID'], keep='first')
-        phomes.drop(phomes[phomes['Sum_Within'] < 2].index, inplace=True)
+        parcel = parcelPreSelect(parcel,buildings)   
+        phomes = nearSelect(parcel,mobileHomes)
         if len(phomes) > 0:
-            phomes.to_file(os.path.join(pFilePath,pFilePath.split('\\')[-1]+'.gpkg'),driver='GPKG', layer='MH_parcels')
+            phomes.to_file(os.path.join(pFilePath,pFilePath.split('\\')[-1]+'double.gpkg'),driver='GPKG', layer='MH_parcels')
         else:
             with open(exceptPath, 'a', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 writer.writerow([pFilePath.split('\\')[-1],'NO JOIN'])
+
+
 
 def parcelMHPJoin2(pFilePath):
     fips = pFilePath.split('\\')[-1]
@@ -143,7 +163,7 @@ def parcelMHPJoin2(pFilePath):
         parcel.drop_duplicates(subset=['geometry'], inplace=True)
         buildings = gpd.read_file(os.path.join(pFilePath,fips+'_buildings.shp'))
         buildings.to_crs(crs='ESRI:102003', inplace=True)
-        parcel = sumWithin(fips,parcel,buildings)
+        parcel = sumWithin(parcel,buildings)
         parcel['geometry'] = parcel['geometry'].simplify(1)
         parcel['intLen'] = parcel.apply(lambda row: interiorLen(row.geometry), axis=1)
         parcel['intZscore'] = np.abs(stats.zscore(parcel['intLen']))
@@ -154,39 +174,39 @@ def parcelMHPJoin2(pFilePath):
         parcel.drop(parcel[(parcel['extZscore1'] > 3) & (parcel['Sum_Within'] < 10)].index, inplace=True) #dropping outlier geometries
         parcel.drop(parcel[parcel['Sum_Within'] < 1].index, inplace=True)
         parcel.reset_index(inplace=True)
-        columns = ['APN', 'APN2', 'intLen','intZscore', 'extLen1','extZscore1', 'Sum_Within','geometry']
+        columns = ['APN', 'APN2', 'intLen','intZscore', 'extLen1','extZscore1', 'Sum_Within', 'mnBlgArea', 'geometry']
         drops = [c for c in parcel.columns if c not in columns]
         parcel.drop(drops, axis=1, inplace=True)        
         mobileHomes = gpd.read_file(mhpPath)
-        mobileHomes.to_crs(crs='ESRI:102003', inplace=True)
+        mobileHomes.to_crs(crs='ESRI:102003', inplace=True) 
         if parcel.crs != mobileHomes.crs:
             parcel.to_crs(mobileHomes.crs, inplace=True)
-        print(parcel['geometry'])
-        phomes = gpd.sjoin_nearest(parcel, mobileHomes, max_distance=15.0, distance_col='distances')
-        print(phomes['geometry'])
+        phomes = gpd.sjoin_nearest(parcel, mobileHomes, max_distance=100.0, distance_col='distances')
         phomes.drop('index_right', axis=1, inplace=True)
-        phomes = phomes.sort_values(['MHPID','Sum_Within'], ascending=False).drop_duplicates(subset=['MHPID'], keep='first')
-        phomes.drop(phomes[phomes['Sum_Within'] < 2].index, inplace=True)
+        #phomes = phomes.sort_values(['MHPID','Sum_Within'], ascending=False).drop_duplicates(subset=['MHPID'], keep='first')
+        phomes.drop(phomes[(phomes['Sum_Within'] < 10) & (phomes['mnBlgArea'] > 175)].index, inplace=True)
+        phomes.drop(phomes[phomes['mnBlgArea'] > 200].index, inplace=True)
+        phomes.drop(phomes[phomes['Sum_Within'] < 5].index, inplace=True) #drop matched parcels with less than 5 buildings
+        #phomes.drop_duplicates(subset=['geometry'], inplace=True)
         if len(phomes) > 0:
-            phomes.to_file(os.path.join(pFilePath,pFilePath.split('\\')[-1]+'multi15.gpkg'),driver='GPKG', layer='MH_parcels')
+            phomes.to_file(os.path.join(pFilePath,pFilePath.split('\\')[-1]+'multi100_less5.gpkg'),driver='GPKG', layer='MH_parcels')
         else:
-            with open(exceptPath, 'a', newline='', encoding='utf-8') as f:
+            with open(exceptPath, 'a', newline='', encoding='utf-8') as f: #need to figure out a better way. Is it overwriting?
                 writer = csv.writer(f)
                 writer.writerow([pFilePath.split('\\')[-1],'NO JOIN'])
-        print(phomes['geometry'])
-
+       
 
 def union_intersect(pFilePath):
     fips = pFilePath.split('\\')[-1]
-    if os.path.exists(os.path.join(pFilePath,fips+'multi15.gpkg')) == True:
-        phomes = gpd.read_file(os.path.join(pFilePath,fips+'multi15.gpkg'), layer='MH_parcels')         
+    if os.path.exists(os.path.join(pFilePath,fips+'double.gpkg')) == True:
+        phomes = gpd.read_file(os.path.join(pFilePath,fips+'double.gpkg'), layer='MH_parcels')         
         blocks = gpd.read_file(os.path.join(pFilePath,fips+'_blocks.gpkg'), layer=fips+'_blocks')
         #phomesAlbers = phomes.to_crs(blocksAlbers.crs)
         union = blocks.overlay(phomes, how='intersection')
         union['unionArea_m'] = union['geometry'].area
         union['blockParcel_ratio'] = (union['unionArea_m']/union['blockArea_m']) *100
         if len(union) > 0:
-            union.to_file(os.path.join(pFilePath,pFilePath.split('\\')[-1]+'multi15.gpkg'),driver='GPKG', layer='MH_parc_blk_union')
+            union.to_file(os.path.join(pFilePath,pFilePath.split('\\')[-1]+'double.gpkg'),driver='GPKG', layer='MH_parc_blk_union')
             union.to_csv(os.path.join(pFilePath,'union_csv.csv'))
         else:
             with open(exceptPath, 'a', newline='', encoding='utf-8') as f:
@@ -207,10 +227,10 @@ def mhp_union_merge(pFilePath):
             renames = dict(zip(renames_x,renames))
             mhp_union_merge.rename(renames, axis='columns',inplace=True)
             mhp_union_merge.drop(mhp_union_merge.filter(regex='Unnamed*').columns,axis=1, inplace=True)
-            mhp_union_merge.to_csv(os.path.join(pFilePath, 'MHP_'+ pFilePath.split('\\')[-1] +'_final_multi15.csv'))
+            mhp_union_merge.to_csv(os.path.join(pFilePath, 'MHP_'+ pFilePath.split('\\')[-1] +'double.csv'))
         else:
             mhp.drop(mhp.filter(regex='Unnamed*').columns,axis=1, inplace=True)
-            mhp.to_csv(os.path.join(pFilePath, 'MHP_'+ pFilePath.split('\\')[-1] +'_final_multi15.csv'))
+            mhp.to_csv(os.path.join(pFilePath, 'MHP_'+ pFilePath.split('\\')[-1] +'double.csv'))
 
 '''
 # NEED to iterate over fips independent of folder structure to account for missing counties

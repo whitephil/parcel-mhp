@@ -40,7 +40,7 @@ if __name__ == '__main__':
 
     #original
     with Pool() as pool:
-        pool.map(parcelfunks.parcelMHPJoin2,parcelsPaths)
+        pool.map(parcelfunks.parcelMHPJoin,parcelsPaths)
 
     print('Parcel-MHP Join Time:',time.time()-ti)
     
@@ -62,12 +62,12 @@ if __name__ == '__main__':
     
     stateFinalDF = pd.DataFrame()
     for path in parcelsPaths:
-        if os.path.exists(os.path.join(path,'MHP_'+path.split('\\')[-1]+'_final_multi15.csv')):
-            countyDF = pd.read_csv(os.path.join(path,'MHP_'+path.split('\\')[-1]+'_final_multi15.csv'), dtype={'STATEFP10':str,'COUNTYFP10':str,'TRACTCE10':str,'BLOCKCE10':str,'GEOID10':str,'MTFCC10':str,'UACE10':str,'GEOID10':str,'GEOID10':str, 'MH_COUNTY_FIPS':str, 'MHPID':str})
+        if os.path.exists(os.path.join(path,'MHP_'+path.split('\\')[-1]+'_double.csv')):
+            countyDF = pd.read_csv(os.path.join(path,'MHP_'+path.split('\\')[-1]+'_double.csv'), dtype={'STATEFP10':str,'COUNTYFP10':str,'TRACTCE10':str,'BLOCKCE10':str,'GEOID10':str,'MTFCC10':str,'UACE10':str,'GEOID10':str,'GEOID10':str, 'MH_COUNTY_FIPS':str, 'MHPID':str})
             stateFinalDF = pd.concat([stateFinalDF,countyDF])
             
     stateFinalDF.drop(stateFinalDF.filter(regex='Unnamed*').columns,axis=1, inplace=True)
-    stateFinalDF.to_csv(r'c:/users/phwh9568/data/parcelatlas/CO_2022/Colorado_Final_original_near_multi15.csv')
+    stateFinalDF.to_csv(r'c:/users/phwh9568/data/parcelatlas/CO_2022/Colorado_Final_multi100_less5.csv')
 
     winsound.Beep(450, 1000)  
     print('Done.')
