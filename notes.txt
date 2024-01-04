@@ -147,3 +147,11 @@ Ended up reworking the near join process, breaking things up into smaller functi
 
 Tomorrow: select only medium+ (20 or 30 minimum), carry over some more columns from original mhp data
 into final data.
+
+1/2/24
+
+-Working well.
+
+Questions for Emily:
+-Fields to carry over?
+-How to approach/figure out success rate in identifying parcels.
