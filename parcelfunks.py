@@ -43,9 +43,10 @@ def sumWithin(parcels,buildings):
     cols = [cols[-1]] + cols[:-1]
     parcels = parcels[cols]
     buildings['areas'] = buildings['geometry'].area
-    print(buildings.columns)
+    #print(buildings.columns)
     dfsjoin = gpd.sjoin(parcels,buildings,predicate='contains')
-    dfpivot = pd.pivot_table(dfsjoin,index=['ID','APN'], aggfunc={'FINDEX':len,'areas':'mean'}).reset_index()
+    #dfpivot = pd.pivot_table(dfsjoin,index=['ID','APN'], aggfunc={'FINDEX':len,'areas':'mean'}).reset_index()
+    dfpivot = pd.pivot_table(dfsjoin,index=['ID','APN'], aggfunc={'FID':len,'areas':'mean'}).reset_index()
     dfpolynew = parcels.merge(dfpivot, how='left', on='ID')
     if 'FINDEX' in dfpolynew:
         dfpolynew.rename({'APN_x':'APN', 'FINDEX': 'Sum_Within', 'areas':'mnBlgArea'}, axis='columns',inplace=True)
@@ -112,14 +113,15 @@ def nearSelect(parcel, mobileHomes):
 
 def parcelMHPJoin(pFilePath):    
     fips = pFilePath.split('\\')[-1]
-    mhpPath = os.path.join(pFilePath,fips+'_mhps.gpkg')
+    mhpPath = os.path.join(pFilePath,fips+'_COSTAR_mhps.gpkg')
     if os.path.exists(mhpPath):
         parcel = gpd.read_file(os.path.join(pFilePath,'parcels.shp'))
         parcel.to_crs(crs='ESRI:102003', inplace=True)
-        print(os.path.join(pFilePath,fips+'_Buildings.gpkg'))
-        buildings = gpd.read_file(os.path.join(pFilePath,fips+'_Buildings.gpkg'),layer=fips+'_Buildings')
+        #print(os.path.join(pFilePath,fips+'_Buildings.gpkg'))
+        #buildings = gpd.read_file(os.path.join(pFilePath,fips+'_Buildings.gpkg'),layer=fips+'_Buildings')
+        buildings = gpd.read_file(os.path.join(pFilePath,fips+'_buildings.shp'))
         buildings.to_crs(crs='ESRI:102003', inplace=True)
-        mobileHomes = gpd.read_file(mhpPath)
+        mobileHomes = gpd.read_file(mhpPath, layer='COSTAR_mhps')
         mobileHomes.to_crs(crs='ESRI:102003', inplace=True)
         parcel = parcelPreSelect(parcel,buildings)   
         phomes = nearSelect(parcel,mobileHomes)
@@ -151,10 +153,10 @@ def union_intersect(pFilePath):
 
 
 def mhp_union_merge(pFilePath):
-    if os.path.exists(os.path.join(pFilePath,'MHP_'+ pFilePath.split('\\')[-1] +'.csv')):
-        mhp = pd.read_csv(os.path.join(pFilePath,'MHP_'+ pFilePath.split('\\')[-1] +'.csv'), dtype={'MH_COUNTY_FIPS':str, 'MHPID':str})
+    if os.path.exists(os.path.join(pFilePath,'MHP_'+ pFilePath.split('\\')[-1] +'_COSTAR.csv')):
+        mhp = pd.read_csv(os.path.join(pFilePath,'MHP_'+ pFilePath.split('\\')[-1] +'_COSTAR.csv'), dtype={'MH_COUNTY_FIPS':str, 'MH_parcel_num':str})
         if os.path.exists(os.path.join(pFilePath,'union_csv.csv')) == True:
-            union = pd.read_csv(os.path.join(pFilePath,'union_csv.csv'), dtype={'GEOID10':str,'STATEFP10':str, 'COUNTYFP10':str, 'TRACTCE10':str,'BLOCKCE10':str, 'MHPID':str})
+            union = pd.read_csv(os.path.join(pFilePath,'union_csv.csv'), dtype={'GEOID10':str,'STATEFP10':str, 'COUNTYFP10':str, 'TRACTCE10':str,'BLOCKCE10':str, 'MH_parcel_num':str})
             mhp_union_merge = mhp.merge(union, on='MHPID', how = 'outer')
             #mhp_union_merge.drop(['Unnamed: 0_x', 'Unnamed: 0_y'], axis=1, inplace=True)
             mhp_union_merge.drop(mhp_union_merge.filter(regex='_y$').columns, axis=1, inplace=True)
@@ -163,7 +165,7 @@ def mhp_union_merge(pFilePath):
             renames = dict(zip(renames_x,renames))
             mhp_union_merge.rename(renames, axis='columns',inplace=True)
             mhp_union_merge.drop(mhp_union_merge.filter(regex='Unnamed*').columns,axis=1, inplace=True)
-            mhp_union_merge.to_csv(os.path.join(pFilePath, 'MHP_'+ pFilePath.split('\\')[-1] +'.csv'))
+            mhp_union_merge.to_csv(os.path.join(pFilePath, 'MHP_'+ pFilePath.split('\\')[-1] +'_COSTAR_final.csv'))
         else:
             mhp.drop(mhp.filter(regex='Unnamed*').columns,axis=1, inplace=True)
-            mhp.to_csv(os.path.join(pFilePath, 'MHP_'+ pFilePath.split('\\')[-1] +'.csv'))
+            mhp.to_csv(os.path.join(pFilePath, 'MHP_'+ pFilePath.split('\\')[-1] +'_COSTAR_final.csv'))

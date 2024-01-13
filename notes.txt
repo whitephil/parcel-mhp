@@ -155,3 +155,10 @@ into final data.
 Questions for Emily:
 -Fields to carry over?
 -How to approach/figure out success rate in identifying parcels.
+
+1/5/24
+
+Need to fix: get rid of MHP_{fips}.csv files, resplit the original state file into counties with that name
+Rename output so it doesn't overwrite
+figure out problem with field types (fips getting messed up)
+Get clarity on what emily wants.
