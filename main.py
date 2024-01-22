@@ -14,7 +14,7 @@ if __name__ == '__main__':
     #stateFips = pd.read_csv(r'C:\Users\phwh9568\Data\ParcelAtlas\stateFips.csv', dtype={'STATEFP':str})
     #stateFipsList = stateFips['STATEFP'].tolist()
     externalDrive = r'E:/'
-    outDir = r'C:\Users\phwh9568\Data\ParcelAtlas'
+    outDir = r'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022'
     # THIS INVENTORY FILE IS WRONG!!! or not quite right? Need to rerun w/ updated data
     '''
     pInventory = pd.read_csv(os.path.join(externalDrive,'parcelInventory.csv'), dtype={'STATE':str,'COUNTY':str})
@@ -41,7 +41,7 @@ if __name__ == '__main__':
     CO_pInventory_False.to_csv(os.path.join(CO_path,'missingParcelData.csv')) # need to get this to work
     fipsList = CO_pInventory_True['COUNTY'].tolist()   
     parcelsPaths = [os.path.join(CO_path,fips) for fips in fipsList]
-    parcelsPaths = glob(r'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022\Counties\*')
+    #parcelsPaths = glob(r'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022\Counties\*')
 
     ti = time.time()
 
@@ -68,14 +68,19 @@ if __name__ == '__main__':
     print('Table merge time:',time.time()-ti)
     
     stateFinalDF = pd.DataFrame()
+    exceptionsFinalDF = pd.DataFrame()
     for path in parcelsPaths:
-        if os.path.exists(os.path.join(path,'MHP_'+path.split('\\')[-1]+'.csv')):
-            countyDF = pd.read_csv(os.path.join(path,'MHP_'+path.split('\\')[-1]+'_final.csv'), dtype={'STATEFP10':str,'COUNTYFP10':str,'TRACTCE10':str,'BLOCKCE10':str,'GEOID10':str,'MTFCC10':str,'UACE10':str,'GEOID10':str, 'MH_COUNTY_FIPS':str, 'MHPID':str})
+        fips = path.split('\\')[-1]
+        countyEx = pd.read_csv(os.path.join(path,'exceptions.csv'))
+        exceptionsFinalDF = pd.concat([exceptionsFinalDF,countyEx])
+        if os.path.exists(os.path.join(path,'MHP_'+fips+'_COSTAR_final_50.csv')):
+            countyDF = pd.read_csv(os.path.join(path,'MHP_'+fips+'_COSTAR_final_50.csv'), dtype={'STATEFP10':str,'COUNTYFP10':str,'TRACTCE10':str,'BLOCKCE10':str,'GEOID10':str,'MTFCC10':str,'UACE10':str,'GEOID10':str, 'MH_COUNTY_FIPS':str, 'MH_parcel_num':str})
             stateFinalDF = pd.concat([stateFinalDF,countyDF])
             
     stateFinalDF.drop(stateFinalDF.filter(regex='Unnamed*').columns,axis=1, inplace=True)
     #stateFinalDF.to_csv(os.path.join(externalDrive,f'State_{state}',f'{state}_final.csv'))
     stateFinalDF.to_csv(os.path.join(CO_path,f'{state}_final.csv'))
+    exceptionsFinalDF.to_csv(os.path.join(outDir,'exceptions.csv'))
 
     winsound.Beep(450, 1000)  
     print('Done.')
