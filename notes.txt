@@ -162,3 +162,29 @@ Need to fix: get rid of MHP_{fips}.csv files, resplit the original state file in
 Rename output so it doesn't overwrite
 figure out problem with field types (fips getting messed up)
 Get clarity on what emily wants.
+
+1/31/24
+Been testing matching just on simple table merge w/ apn, but only works about 50% 
+of the time, worse than my algorithm. 
+
+-Need to check accuracy of the correct 50% though...
+-How can I incorporate this?
+-To do:
+1. incorporate apn
+2. incorporate building/unit numbers as a check
+3. feasible to incorporate ownership? 
+
+-First run APN match (keep non matches) and add column T/F for APN match
+-Then run geo matching process, resulting in some double matches
+-Group parcels by... geom?... and drop duplicates where APN match is False
+
+-Need to sum sum_within when grouped by APN, how different from MH_UNITS... 
+-if very different, FLAG for inspection? Or drop if APN-MHAPN differ? Or if APN match is false?
+
+2/1/24
+
+-Incorporated apn pre merge followed by geo merge, but have not weeded out
+ duplicated parcels yet.
+
+-need to compute sum_within/MH_UNITS proportions into a new columns, perhaps sort by
+ then can drop below a percentage???

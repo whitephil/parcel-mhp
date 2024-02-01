@@ -15,6 +15,8 @@ with open(exceptPath, 'w', newline='', encoding='utf-8') as f:
     writer = csv.writer(f)
     writer.writerow(['COUNTY_FIPS','PROBLEM'])
 
+
+# Filtering out outlier parcels:
 def interiorLen(geom):
     '''
     sum of interior points in a polygon
@@ -34,7 +36,7 @@ def exteriorLen(geom):
     if geom.geom_type == 'MultiPolygon':
         return sum([len(g.exterior.xy[0]) for g in geom.geoms])
 
-
+# Buildings
 def sumWithin(parcels,buildings):
     #bespoke, only works with this data... but could be modified to be more flexible
     # parcels should be parcels, buildings shoudl be buildings
@@ -61,7 +63,7 @@ def sumWithin(parcels,buildings):
     return dfpolynew
 
 
-# modified mhomes_prepper function to work with original MHP data
+# UPDATED VERSION IN COSTAR_prep.ipynb!!!!!
 def mhomes_prepper(mhomesPath):
     mhomes = gpd.read_file(mhomesPath)
     mhomes.sindex
@@ -73,7 +75,7 @@ def mhomes_prepper(mhomesPath):
     mhomes.rename(renames, axis='columns',inplace=True)
     return mhomes
 
-def parcelPreSelect(parcel,buildings):
+def parcelBuildings(parcel,buildings):
     parcel.drop_duplicates(subset=['geometry'], inplace=True)
     parcel = sumWithin(parcel,buildings)
     parcel['geometry'] = parcel['geometry'].simplify(1)
@@ -83,11 +85,18 @@ def parcelPreSelect(parcel,buildings):
     parcel.reset_index(inplace=True)
     parcel['extLen1'] = parcel.apply(lambda row: exteriorLen(row.geometry), axis=1)
     parcel['extZscore1'] = np.abs(stats.zscore(parcel['extLen1']))
+    columns = ['APN', 'APN2', 'OWNER', 'intLen','intZscore', 'extLen1','extZscore1', 'Sum_Within', 'mnBlgArea', 'geometry']
+    drops = [c for c in parcel.columns if c not in columns]
+    parcel.drop(drops, axis=1, inplace=True)
+    return parcel
+
+   
+def parcelPreFilter(parcel):   
     parcel.drop(parcel[(parcel['extZscore1'] > 3) & (parcel['Sum_Within'] < 10)].index, inplace=True) #dropping outlier geometries
     parcel.drop(parcel[parcel['Sum_Within'] < 5].index, inplace=True) #change to 20 or 30 later
     parcel.drop(parcel[parcel['mnBlgArea'] > 175].index, inplace=True)
     parcel.reset_index(inplace=True)
-    columns = ['APN', 'APN2', 'intLen','intZscore', 'extLen1','extZscore1', 'Sum_Within', 'mnBlgArea', 'geometry']
+    columns = ['APN', 'APN2', 'OWNER', 'intLen','intZscore', 'extLen1','extZscore1', 'Sum_Within', 'mnBlgArea', 'geometry']
     drops = [c for c in parcel.columns if c not in columns]
     parcel.drop(drops, axis=1, inplace=True)
     return parcel
@@ -107,6 +116,12 @@ def nearSelect(parcel, mobileHomes):
     secondJoin.drop('index_right',axis=1,inplace=True)
     concatted = pd.concat([merged,secondJoin])
     concatted.drop(['tempID','IDcheck'], axis=1, inplace=True)
+    concatted['APN_JOIN'] = False
+    cols = list(concatted.columns)
+    cols.remove('geometry')
+    cols.remove('distances')
+    cols = cols + ['distances','geometry']
+    concatted = concatted[cols]    
     return concatted
 
 
@@ -126,8 +141,12 @@ def parcelMHPJoin(pFilePath):
             buildings.to_crs(crs='ESRI:102003', inplace=True)
             mobileHomes = gpd.read_file(mhpPath)
             mobileHomes.to_crs(crs='ESRI:102003', inplace=True)
-            parcel = parcelPreSelect(parcel,buildings)  
+            parcel = parcelBuildings(parcel,buildings)  
+            # run apn join here, NOPE
+            parcel = parcelPreFilter(parcel)
             phomes = nearSelect(parcel,mobileHomes)
+            # sum_within vs unit number check goes here... pivot?
+            # ownership check goes here... pivot?
             if len(phomes) > 0:
                 phomes.to_file(os.path.join(pFilePath,fips+'.gpkg'),driver='GPKG', layer='MH_parcels')
             else:
@@ -170,7 +189,7 @@ def mhp_union_merge(pFilePath):
             renames = dict(zip(renames_x,renames))
             mhp_union_merge.rename(renames, axis='columns',inplace=True)
             mhp_union_merge.drop(mhp_union_merge.filter(regex='Unnamed*').columns,axis=1, inplace=True)
-            mhp_union_merge.to_csv(os.path.join(pFilePath, 'MHP_'+ fips +'_COSTAR_final_50.csv'))
+            mhp_union_merge.to_csv(os.path.join(pFilePath, 'MHP_'+ fips +'_COSTAR_final_50-100.csv'))
         else:
             mhp.drop(mhp.filter(regex='Unnamed*').columns,axis=1, inplace=True)
-            mhp.to_csv(os.path.join(pFilePath, 'MHP_'+ fips +'_COSTAR_final_50.csv'))
+            mhp.to_csv(os.path.join(pFilePath, 'MHP_'+ fips +'_COSTAR_final_50-100.csv'))
