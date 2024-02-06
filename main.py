@@ -74,13 +74,13 @@ if __name__ == '__main__':
         fips = path.split('\\')[-1]
         countyEx = pd.read_csv(os.path.join(path,'exceptions.csv'))
         exceptionsFinalDF = pd.concat([exceptionsFinalDF,countyEx])
-        if os.path.exists(os.path.join(path,'MHP_'+fips+'_COSTAR_final_50-100.csv')):
-            countyDF = pd.read_csv(os.path.join(path,'MHP_'+fips+'_COSTAR_final_50-100.csv'), dtype={'STATEFP10':str,'COUNTYFP10':str,'TRACTCE10':str,'BLOCKCE10':str,'GEOID10':str,'MTFCC10':str,'UACE10':str,'GEOID10':str, 'MH_COUNTY_FIPS':str, 'MH_parcel_num':str})
+        if os.path.exists(os.path.join(path,'MHP_'+fips+'_apnBldFilt.csv')):
+            countyDF = pd.read_csv(os.path.join(path,'MHP_'+fips+'_apnBldFilt.csv'), dtype={'STATEFP10':str,'COUNTYFP10':str,'TRACTCE10':str,'BLOCKCE10':str,'GEOID10':str,'MTFCC10':str,'UACE10':str,'GEOID10':str, 'MH_COUNTY_FIPS':str, 'MH_APN':str})
             stateFinalDF = pd.concat([stateFinalDF,countyDF])
             
     stateFinalDF.drop(stateFinalDF.filter(regex='Unnamed*').columns,axis=1, inplace=True)
     #stateFinalDF.to_csv(os.path.join(externalDrive,f'State_{state}',f'{state}_final.csv'))
-    stateFinalDF.to_csv(os.path.join(CO_path,f'{state}_final.csv'))
+    stateFinalDF.to_csv(os.path.join(CO_path,f'{state}_final_apnBldFilt.csv'))
     exceptionsFinalDF.to_csv(os.path.join(outDir,'exceptions.csv'))
 
     #co_22_dir = r'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022'
@@ -88,15 +88,15 @@ if __name__ == '__main__':
     joinDF = pd.DataFrame()
     for path in parcelsPaths:
         fips = path.split('\\')[-1]
-        if os.path.exists(os.path.join(path,fips+'.gpkg')):
-            union = gpd.read_file(os.path.join(path, fips+'.gpkg'),layer='MH_parc_blk_union')
+        if os.path.exists(os.path.join(path,fips+'apnBldFilt.gpkg')):
+            union = gpd.read_file(os.path.join(path, fips+'apnBldFilt.gpkg'),layer='MH_parc_blk_union')
             unionDF = pd.concat([unionDF,union])
-            join = gpd.read_file(os.path.join(path, fips+'.gpkg'),layer='MH_parcels')
+            join = gpd.read_file(os.path.join(path, fips+'apnBldFilt.gpkg'),layer='MH_parcels')
             joinDF = pd.concat([joinDF,join])        
-    unionDF.to_file(os.path.join(outDir,'Colorado_Final_costar50-100.gpkg'),layer='Colorado_Final_union')
+    unionDF.to_file(os.path.join(outDir,'Colorado_Final_apnBldFilt.gpkg'),layer='Colorado_Final_union')
     #joinDF['polyLen_3'] = joinDF.apply(lambda row: geomLen(row.geometry), axis=1)
     #joinDF['geomZscore_3'] = np.abs(stats.zscore(joinDF['polyLen2']))
-    joinDF.to_file(os.path.join(outDir, 'Colorado_Final_costar50-100.gpkg'),layer='Colorado_Final_MH_parcels')
+    joinDF.to_file(os.path.join(outDir, 'Colorado_Final_apnBldFilt.gpkg'),layer='Colorado_Final_MH_parcels')
 
     winsound.Beep(450, 1000)  
     print('Done.')

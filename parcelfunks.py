@@ -36,6 +36,31 @@ def exteriorLen(geom):
     if geom.geom_type == 'MultiPolygon':
         return sum([len(g.exterior.xy[0]) for g in geom.geoms])
 
+def unitCheck(phomes):
+    piv = pd.pivot_table(phomes,index=['MH_APN','MH_units'], aggfunc={'Sum_Within':'sum', 'MH_prop_id':len}).reset_index()
+    if len(piv) > 0:    
+        piv.rename({'Sum_Within':'Total_Blds', 'MH_prop_id':'MH_Parcel_Count'},axis=1, inplace=True)
+        piv['BLD_UNIT_MARGIN'] = abs(100 - ((piv['MH_units']/piv['Total_Blds'])*100))
+        piv['flag'] = np.where((piv['MH_Parcel_Count'] > 1) & (piv['BLD_UNIT_MARGIN'] > 15),1,0)
+        phomes = pd.merge(phomes,piv[['MH_APN','MH_Parcel_Count','Total_Blds', 'BLD_UNIT_MARGIN', 'flag']],how='left', on='MH_APN')
+    else:
+        phomes = phomes.assign(MH_Parcel_Count =np.nan, Total_Blds=np.nan, BLD_UNIT_MARGIN=np.nan, flag=np.nan)
+    return phomes
+
+def rankNdrop(phomes):
+    phomes['rank'] = phomes.groupby('MH_APN')['distances'].rank(method='max')
+    phomes.drop(phomes[(phomes['flag']==True) & (phomes['MH_Parcel_Count'] == phomes['rank'])].index, inplace=True)
+    phomes.drop(columns={'MH_Parcel_Count', 'Total_Blds', 'BLD_UNIT_MARGIN', 'flag','rank'}, inplace=True)
+    return(phomes)
+
+def unitFilter(phomes):
+    phomes = unitCheck(phomes)
+    #while 1 in phomes['flag'].values:
+    #    phomes = rankNdrop(phomes)
+    #    phomes = unitCheck(phomes)
+    #phomes.drop(columns={'flag'}, inplace=True)
+    return(phomes)
+
 # Buildings
 def sumWithin(parcels,buildings):
     #bespoke, only works with this data... but could be modified to be more flexible
@@ -92,7 +117,7 @@ def parcelBuildings(parcel,buildings):
 
    
 def parcelPreFilter(parcel):   
-    parcel.drop(parcel[(parcel['extZscore1'] > 3) & (parcel['Sum_Within'] < 10)].index, inplace=True) #dropping outlier geometries
+    parcel = parcel.drop(parcel[(parcel['extZscore1'] > 3) & (parcel['Sum_Within'] < 10)].index) #dropping outlier geometries
     parcel.drop(parcel[parcel['Sum_Within'] < 5].index, inplace=True) #change to 20 or 30 later
     parcel.drop(parcel[parcel['mnBlgArea'] > 175].index, inplace=True)
     parcel.reset_index(inplace=True)
@@ -124,7 +149,18 @@ def nearSelect(parcel, mobileHomes):
     concatted = concatted[cols]    
     return concatted
 
-
+def apnJoin(parcel, mobileHomes):
+    parcel['APN'] = parcel['APN'].str.replace('-','')
+    mobileHomes['MH_APN'] = mobileHomes['MH_APN'].str.replace('-','')
+    apnParcel = pd.merge(parcel,mobileHomes, left_on='APN', right_on='MH_APN').drop(columns={'geometry_y'})
+    apnParcel.rename({'geometry_x':'geometry'}, axis='columns', inplace=True)
+    apnParcel['APN_JOIN'] = True
+    apnParcel['distances'] = float(0)
+    cols = list(apnParcel.columns)
+    cols.remove('geometry')
+    cols.append('geometry')
+    apnParcel = apnParcel[cols]
+    return apnParcel
 
 def parcelMHPJoin(pFilePath):    
     fips = pFilePath.split('\\')[-1]
@@ -142,13 +178,20 @@ def parcelMHPJoin(pFilePath):
             mobileHomes = gpd.read_file(mhpPath)
             mobileHomes.to_crs(crs='ESRI:102003', inplace=True)
             parcel = parcelBuildings(parcel,buildings)  
-            # run apn join here, NOPE
+            apnParcel = apnJoin(parcel,mobileHomes)
             parcel = parcelPreFilter(parcel)
             phomes = nearSelect(parcel,mobileHomes)
-            # sum_within vs unit number check goes here... pivot?
-            # ownership check goes here... pivot?
+            phomes = pd.concat([apnParcel,phomes])
+            phomesNullAPNs = phomes.loc[phomes['APN'].str.len() < 2]
+            phomes = phomes.sort_values(by=['APN','APN_JOIN'], ascending=False).drop_duplicates(subset=['APN'], keep='first')
+            phomes = pd.concat([phomes,phomesNullAPNs])
+            phomes.drop_duplicates(subset=['geometry'], inplace=True)
+            phomes.reset_index(inplace=True)
+            phomes.drop(columns={'index'},inplace=True)            
+            phomes = unitFilter(phomes)
+
             if len(phomes) > 0:
-                phomes.to_file(os.path.join(pFilePath,fips+'.gpkg'),driver='GPKG', layer='MH_parcels')
+                phomes.to_file(os.path.join(pFilePath,fips+'apnBldFilt.gpkg'),driver='GPKG', layer='MH_parcels')
             else:
                 writer.writerow([fips,'No MHP-Parcel Joins'])
         else:
@@ -159,8 +202,8 @@ def union_intersect(pFilePath):
     fips = pFilePath.split('\\')[-1]
     with open(os.path.join(pFilePath,'exceptions.csv'),'a', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        if os.path.exists(os.path.join(pFilePath,fips+'.gpkg')) == True:
-            phomes = gpd.read_file(os.path.join(pFilePath,fips+'.gpkg'), layer='MH_parcels')         
+        if os.path.exists(os.path.join(pFilePath,fips+'apnBldFilt.gpkg')) == True:
+            phomes = gpd.read_file(os.path.join(pFilePath,fips+'apnBldFilt.gpkg'), layer='MH_parcels')         
             blocks = gpd.read_file(os.path.join(pFilePath,fips+'_blocks.gpkg'), layer=fips+'_blocks')
             blocks.to_crs(crs='ESRI:102003', inplace=True)
             blocks['blockArea_m'] = blocks['geometry'].area
@@ -168,20 +211,24 @@ def union_intersect(pFilePath):
             union['unionArea_m'] = union['geometry'].area
             union['blockParcel_ratio'] = (union['unionArea_m']/union['blockArea_m']) *100
             if len(union) > 0:
-                union.to_file(os.path.join(pFilePath,fips+'.gpkg'),driver='GPKG', layer='MH_parc_blk_union')
+                union.to_file(os.path.join(pFilePath,fips+'apnBldFilt.gpkg'),driver='GPKG', layer='MH_parc_blk_union')
                 union.to_csv(os.path.join(pFilePath,'union_csv.csv'))
             else:
                 writer.writerow([fips, 'Join worked-but union missed-investigate'])
 
-
+# need to check if all output columns are carried through
 
 def mhp_union_merge(pFilePath):
     fips = pFilePath.split('\\')[-1]
     if os.path.exists(os.path.join(pFilePath,'MHP_'+ fips +'_COSTAR.csv')):
-        mhp = pd.read_csv(os.path.join(pFilePath,'MHP_'+ fips +'_COSTAR.csv'), dtype={'MH_COUNTY_FIPS':str, 'MH_parcel_num':str})
+        mhp = pd.read_csv(os.path.join(pFilePath,'MHP_'+ fips +'_COSTAR.csv'), dtype={'MH_COUNTY_FIPS':str, 'MH_APN':str})
         if os.path.exists(os.path.join(pFilePath,'union_csv.csv')) == True:
-            union = pd.read_csv(os.path.join(pFilePath,'union_csv.csv'), dtype={'GEOID10':str,'STATEFP10':str, 'COUNTYFP10':str, 'TRACTCE10':str,'BLOCKCE10':str, 'MH_parcel_num':str})
-            mhp_union_merge = mhp.merge(union, on='MH_parcel_num', how = 'outer')
+            union = pd.read_csv(os.path.join(pFilePath,'union_csv.csv'), dtype={'GEOID10':str,'STATEFP10':str, 'COUNTYFP10':str, 'TRACTCE10':str,'BLOCKCE10':str, 'MH_APN':str})
+            try:
+                mhp_union_merge = mhp.merge(union, on='MH_APN', how = 'outer')
+            except:
+                print(fips)
+                pass
             #mhp_union_merge.drop(['Unnamed: 0_x', 'Unnamed: 0_y'], axis=1, inplace=True)
             mhp_union_merge.drop(mhp_union_merge.filter(regex='_y$').columns, axis=1, inplace=True)
             renames_x = mhp_union_merge.filter(regex='_x$').columns
@@ -189,7 +236,7 @@ def mhp_union_merge(pFilePath):
             renames = dict(zip(renames_x,renames))
             mhp_union_merge.rename(renames, axis='columns',inplace=True)
             mhp_union_merge.drop(mhp_union_merge.filter(regex='Unnamed*').columns,axis=1, inplace=True)
-            mhp_union_merge.to_csv(os.path.join(pFilePath, 'MHP_'+ fips +'_COSTAR_final_50-100.csv'))
+            mhp_union_merge.to_csv(os.path.join(pFilePath, 'MHP_'+ fips +'_apnBldFilt.csv'))
         else:
             mhp.drop(mhp.filter(regex='Unnamed*').columns,axis=1, inplace=True)
-            mhp.to_csv(os.path.join(pFilePath, 'MHP_'+ fips +'_COSTAR_final_50-100.csv'))
+            mhp.to_csv(os.path.join(pFilePath, 'MHP_'+ fips +'_apnBldFilt.csv'))
