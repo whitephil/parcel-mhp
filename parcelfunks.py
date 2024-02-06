@@ -37,10 +37,13 @@ def exteriorLen(geom):
         return sum([len(g.exterior.xy[0]) for g in geom.geoms])
 
 def unitCheck(phomes):
+    #first remove any duplicate parcel/distances (likely zero--a 0 dist from apn join and wrong 0 dist from incorrect spatial join due to inaccurate geocode)
+    #phomes = phomes.sort_values(by=['MH_prop_id','distances','APN_JOIN']).drop_duplicates(subset=['distances','MH_prop_id'], keep='last')
+    #note that this drop based on duplicated 
     piv = pd.pivot_table(phomes,index=['MH_APN','MH_units'], aggfunc={'Sum_Within':'sum', 'MH_prop_id':len}).reset_index()
     if len(piv) > 0:    
         piv.rename({'Sum_Within':'Total_Blds', 'MH_prop_id':'MH_Parcel_Count'},axis=1, inplace=True)
-        piv['BLD_UNIT_MARGIN'] = abs(100 - ((piv['MH_units']/piv['Total_Blds'])*100))
+        piv['BLD_UNIT_MARGIN'] = (100 - ((piv['MH_units']/piv['Total_Blds'])*100))
         piv['flag'] = np.where((piv['MH_Parcel_Count'] > 1) & (piv['BLD_UNIT_MARGIN'] > 15),1,0)
         phomes = pd.merge(phomes,piv[['MH_APN','MH_Parcel_Count','Total_Blds', 'BLD_UNIT_MARGIN', 'flag']],how='left', on='MH_APN')
     else:
@@ -48,6 +51,7 @@ def unitCheck(phomes):
     return phomes
 
 def rankNdrop(phomes):
+    #now rank and remove furthest if building sum if building margin is high and positive
     phomes['rank'] = phomes.groupby('MH_APN')['distances'].rank(method='max')
     phomes.drop(phomes[(phomes['flag']==True) & (phomes['MH_Parcel_Count'] == phomes['rank'])].index, inplace=True)
     phomes.drop(columns={'MH_Parcel_Count', 'Total_Blds', 'BLD_UNIT_MARGIN', 'flag','rank'}, inplace=True)
@@ -55,10 +59,10 @@ def rankNdrop(phomes):
 
 def unitFilter(phomes):
     phomes = unitCheck(phomes)
-    #while 1 in phomes['flag'].values:
-    #    phomes = rankNdrop(phomes)
-    #    phomes = unitCheck(phomes)
-    #phomes.drop(columns={'flag'}, inplace=True)
+    while 1 in phomes['flag'].values:
+        phomes = rankNdrop(phomes)
+        phomes = unitCheck(phomes)
+    phomes.drop(columns={'flag'}, inplace=True)
     return(phomes)
 
 # Buildings
@@ -155,7 +159,7 @@ def apnJoin(parcel, mobileHomes):
     apnParcel = pd.merge(parcel,mobileHomes, left_on='APN', right_on='MH_APN').drop(columns={'geometry_y'})
     apnParcel.rename({'geometry_x':'geometry'}, axis='columns', inplace=True)
     apnParcel['APN_JOIN'] = True
-    apnParcel['distances'] = float(0)
+    apnParcel['distances'] = float(-0.1)
     cols = list(apnParcel.columns)
     cols.remove('geometry')
     cols.append('geometry')
@@ -178,8 +182,8 @@ def parcelMHPJoin(pFilePath):
             mobileHomes = gpd.read_file(mhpPath)
             mobileHomes.to_crs(crs='ESRI:102003', inplace=True)
             parcel = parcelBuildings(parcel,buildings)  
-            apnParcel = apnJoin(parcel,mobileHomes)
             parcel = parcelPreFilter(parcel)
+            apnParcel = apnJoin(parcel,mobileHomes)
             phomes = nearSelect(parcel,mobileHomes)
             phomes = pd.concat([apnParcel,phomes])
             phomesNullAPNs = phomes.loc[phomes['APN'].str.len() < 2]
