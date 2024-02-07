@@ -188,3 +188,9 @@ of the time, worse than my algorithm.
 
 -need to compute sum_within/MH_UNITS proportions into a new columns, perhaps sort by
  then can drop below a percentage???
+
+ 2/7/24
+ -Finally got the sum_within/MH_units filter worked out yesterday--works!!!! 
+ -downloaded all 2010 and 2000 blocks boundaries for Colorado
+ -integrated 2000 and 2010 workflows into parcelfunks, but untested
+ -need to finish working 2000 and 2010 workflows into main.py

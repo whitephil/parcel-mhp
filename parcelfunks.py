@@ -1,4 +1,5 @@
 import os
+import fiona
 import geopandas as gpd
 import pandas as pd
 import csv
@@ -122,13 +123,16 @@ def parcelBuildings(parcel,buildings):
    
 def parcelPreFilter(parcel):   
     parcel = parcel.drop(parcel[(parcel['extZscore1'] > 3) & (parcel['Sum_Within'] < 10)].index) #dropping outlier geometries
-    parcel.drop(parcel[parcel['Sum_Within'] < 5].index, inplace=True) #change to 20 or 30 later
+    parcel.drop(parcel[parcel['Sum_Within'] < new_func()].index, inplace=True) #change to 20 or 30 later
     parcel.drop(parcel[parcel['mnBlgArea'] > 175].index, inplace=True)
     parcel.reset_index(inplace=True)
     columns = ['APN', 'APN2', 'OWNER', 'intLen','intZscore', 'extLen1','extZscore1', 'Sum_Within', 'mnBlgArea', 'geometry']
     drops = [c for c in parcel.columns if c not in columns]
     parcel.drop(drops, axis=1, inplace=True)
     return parcel
+
+def new_func():
+    return 5
 
 
 def nearSelect(parcel, mobileHomes):
@@ -175,7 +179,6 @@ def parcelMHPJoin(pFilePath):
         if os.path.exists(mhpPath):
             parcel = gpd.read_file(os.path.join(pFilePath,'parcels.shp'))
             parcel.to_crs(crs='ESRI:102003', inplace=True)
-            #print(os.path.join(pFilePath,fips+'_Buildings.gpkg'))
             #buildings = gpd.read_file(os.path.join(pFilePath,fips+'_Buildings.gpkg'),layer=fips+'_Buildings')
             buildings = gpd.read_file(os.path.join(pFilePath,fips+'_buildings.shp'))
             buildings.to_crs(crs='ESRI:102003', inplace=True)
@@ -195,7 +198,7 @@ def parcelMHPJoin(pFilePath):
             phomes = unitFilter(phomes)
 
             if len(phomes) > 0:
-                phomes.to_file(os.path.join(pFilePath,fips+'apnBldFilt.gpkg'),driver='GPKG', layer='MH_parcels')
+                phomes.to_file(os.path.join(pFilePath,fips+'.gpkg'),driver='GPKG', layer='MH_parcels')
             else:
                 writer.writerow([fips,'No MHP-Parcel Joins'])
         else:
@@ -206,19 +209,23 @@ def union_intersect(pFilePath):
     fips = pFilePath.split('\\')[-1]
     with open(os.path.join(pFilePath,'exceptions.csv'),'a', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        if os.path.exists(os.path.join(pFilePath,fips+'apnBldFilt.gpkg')) == True:
-            phomes = gpd.read_file(os.path.join(pFilePath,fips+'apnBldFilt.gpkg'), layer='MH_parcels')         
-            blocks = gpd.read_file(os.path.join(pFilePath,fips+'_blocks.gpkg'), layer=fips+'_blocks')
-            blocks.to_crs(crs='ESRI:102003', inplace=True)
-            blocks['blockArea_m'] = blocks['geometry'].area
-            union = blocks.overlay(phomes, how='intersection')
-            union['unionArea_m'] = union['geometry'].area
-            union['blockParcel_ratio'] = (union['unionArea_m']/union['blockArea_m']) *100
-            if len(union) > 0:
-                union.to_file(os.path.join(pFilePath,fips+'apnBldFilt.gpkg'),driver='GPKG', layer='MH_parc_blk_union')
-                union.to_csv(os.path.join(pFilePath,'union_csv.csv'))
-            else:
-                writer.writerow([fips, 'Join worked-but union missed-investigate'])
+        if os.path.exists(os.path.join(pFilePath,fips+'.gpkg')) == True:
+            phomes = gpd.read_file(os.path.join(pFilePath,fips+'.gpkg'), layer='MH_parcels')
+            layers = fiona.listlayers(os.path.join(pFilePath,fips+'.gpkg'))
+            for layer in layers:
+                year = layer[-2:]
+                blocks = gpd.read_file(os.path.join(pFilePath,f'{fips}_blocks.gpkg'), layer=layer)
+                #blocks.to_crs(crs='ESRI:102003', inplace=True)
+                blocks['blockArea_m'] = blocks['geometry'].area
+                union = blocks.overlay(phomes, how='intersection')
+                union['unionArea_m'] = union['geometry'].area
+                union['blockParcel_ratio'] = (union['unionArea_m']/union['blockArea_m']) *100
+                if len(union) > 0:
+                    union.to_file(os.path.join(pFilePath,fips+'.gpkg'),driver='GPKG', layer=f'MH_parc_blk_union20{year}')
+                    union.to_csv(os.path.join(pFilePath,f'union_csv20{year}.csv'))
+                else:
+                    writer.writerow([fips, 'Join worked-but union missed-investigate'])
+            
 
 # need to check if all output columns are carried through
 
@@ -226,21 +233,23 @@ def mhp_union_merge(pFilePath):
     fips = pFilePath.split('\\')[-1]
     if os.path.exists(os.path.join(pFilePath,'MHP_'+ fips +'_COSTAR.csv')):
         mhp = pd.read_csv(os.path.join(pFilePath,'MHP_'+ fips +'_COSTAR.csv'), dtype={'MH_COUNTY_FIPS':str, 'MH_APN':str})
-        if os.path.exists(os.path.join(pFilePath,'union_csv.csv')) == True:
-            union = pd.read_csv(os.path.join(pFilePath,'union_csv.csv'), dtype={'GEOID10':str,'STATEFP10':str, 'COUNTYFP10':str, 'TRACTCE10':str,'BLOCKCE10':str, 'MH_APN':str})
-            try:
-                mhp_union_merge = mhp.merge(union, on='MH_APN', how = 'outer')
-            except:
-                print(fips)
-                pass
-            #mhp_union_merge.drop(['Unnamed: 0_x', 'Unnamed: 0_y'], axis=1, inplace=True)
-            mhp_union_merge.drop(mhp_union_merge.filter(regex='_y$').columns, axis=1, inplace=True)
-            renames_x = mhp_union_merge.filter(regex='_x$').columns
-            renames = [x.split('_x')[0] for x in renames_x]
-            renames = dict(zip(renames_x,renames))
-            mhp_union_merge.rename(renames, axis='columns',inplace=True)
-            mhp_union_merge.drop(mhp_union_merge.filter(regex='Unnamed*').columns,axis=1, inplace=True)
-            mhp_union_merge.to_csv(os.path.join(pFilePath, 'MHP_'+ fips +'_apnBldFilt.csv'))
-        else:
-            mhp.drop(mhp.filter(regex='Unnamed*').columns,axis=1, inplace=True)
-            mhp.to_csv(os.path.join(pFilePath, 'MHP_'+ fips +'_apnBldFilt.csv'))
+        years = ['00','10']
+        for year in years:
+            if os.path.exists(os.path.join(pFilePath,f'union_csv20{year}.csv')) == True:
+                union = pd.read_csv(os.path.join(pFilePath,f'union_csv20{year}.csv'), dtype={f'GEOID{year}':str,f'STATEFP{year}':str, f'COUNTYFP{year}':str, f'TRACTCE{year}':str,f'BLOCKCE{year}':str, 'MH_APN':str})
+                try:
+                    mhp_union_merge = mhp.merge(union, on='MH_APN', how = 'outer')
+                except:
+                    print(fips)
+                    pass
+                #mhp_union_merge.drop(['Unnamed: 0_x', 'Unnamed: 0_y'], axis=1, inplace=True)
+                mhp_union_merge.drop(mhp_union_merge.filter(regex='_y$').columns, axis=1, inplace=True)
+                renames_x = mhp_union_merge.filter(regex='_x$').columns
+                renames = [x.split('_x')[0] for x in renames_x]
+                renames = dict(zip(renames_x,renames))
+                mhp_union_merge.rename(renames, axis='columns',inplace=True)
+                mhp_union_merge.drop(mhp_union_merge.filter(regex='Unnamed*').columns,axis=1, inplace=True)
+                mhp_union_merge.to_csv(os.path.join(pFilePath, f'MHP_{fips}_20{year}.csv'))
+            else:
+                mhp.drop(mhp.filter(regex='Unnamed*').columns,axis=1, inplace=True)
+                mhp.to_csv(os.path.join(pFilePath, f'MHP_{fips}_20{year}.csv'))
