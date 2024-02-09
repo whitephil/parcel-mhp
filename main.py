@@ -3,19 +3,20 @@ if __name__ == '__main__':
     start = time.time()
 
     from multiprocessing import Pool
-    from glob import glob
     import pandas as pd
     import geopandas as gpd
     import parcelfunks
+    import pyogrio
     import os
     import warnings
     import winsound
 
-    warnings.filterwarnings("ignore")
+    #warnings.filterwarnings("ignore")
     #stateFips = pd.read_csv(r'C:\Users\phwh9568\Data\ParcelAtlas\stateFips.csv', dtype={'STATEFP':str})
     #stateFipsList = stateFips['STATEFP'].tolist()
     externalDrive = r'E:/'
     outDir = r'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022'
+    
     # THIS INVENTORY FILE IS WRONG!!! or not quite right? Need to rerun w/ updated data
     '''
     pInventory = pd.read_csv(os.path.join(externalDrive,'parcelInventory.csv'), dtype={'STATE':str,'COUNTY':str})
@@ -77,30 +78,36 @@ if __name__ == '__main__':
             fips = path.split('\\')[-1]
             countyEx = pd.read_csv(os.path.join(path,'exceptions.csv'))
             exceptionsFinalDF = pd.concat([exceptionsFinalDF,countyEx])
-
             if os.path.exists(os.path.join(path,f'MHP_{fips}_{year}.csv')):
                 countyDF = pd.read_csv(os.path.join(path,f'MHP_{fips}_{year}.csv'), dtype={f'STATEFP{yr}':str,f'COUNTYFP{yr}':str,f'TRACTCE{yr}':str,f'BLOCKCE{yr}':str,f'GEOID{yr}':str,f'MTFCC{yr}':str,f'UACE{yr}':str,f'GEOID{yr}':str, 'MH_COUNTY_FIPS':str, 'MH_APN':str})
-                stateFinalDF = pd.concat([stateFinalDF,countyDF])
-                
+                stateFinalDF = pd.concat([stateFinalDF,countyDF])                
         stateFinalDF.drop(stateFinalDF.filter(regex='Unnamed*').columns,axis=1, inplace=True)
-        #stateFinalDF.to_csv(os.path.join(externalDrive,f'State_{state}',f'{state}_final.csv'))
-        stateFinalDF.to_csv(os.path.join(CO_path,f'{state}_{year}.csv'))
+        #stateFinalDF.to_csv(os.path.join(externalDrive,f'State_{state}',f'{state}_{year}_final.csv'))
+        stateFinalDF.to_csv(os.path.join(CO_path,f'{state}_{year}_final.csv'))
         exceptionsFinalDF.to_csv(os.path.join(outDir,'exceptions.csv'))
 
     #co_22_dir = r'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022'
         
-        # need to iterate through fiona layers list do do this correctly, and perhaps above
+        # need to iterate through fiona layers list do do this correctly, and perhaps abovegit 
+    
     unionDF00 = pd.DataFrame()
-    unionDF10
+    unionDF10 = pd.DataFrame()
     joinDF = pd.DataFrame()
     for path in parcelsPaths:
-        fips = path.split('\\')[-1]
+        fips = path.split('\\')[-1]        
         if os.path.exists(os.path.join(path,fips+'.gpkg')):
-            union00 = gpd.read_file(os.path.join(path, fips+'.gpkg'),layer='MH_parc_blk_union2000')
-            unionDF00 = pd.concat([unionDF00,union00])
+            layers = pyogrio.list_layers(os.path.join(path,fips+'.gpkg'))
+            if 'MH_parc_blk_union2000' in layers:
+                union00 = gpd.read_file(os.path.join(path, fips+'.gpkg'),layer='MH_parc_blk_union2000')
+                unionDF00 = pd.concat([unionDF00,union00])
+            if 'MH_parc_blk_union2010' in layers:
+                union10 = gpd.read_file(os.path.join(path, fips+'.gpkg'),layer='MH_parc_blk_union2010')
+                unionDF10 = pd.concat([unionDF10,union10])                
             join = gpd.read_file(os.path.join(path, fips+'.gpkg'),layer='MH_parcels')
             joinDF = pd.concat([joinDF,join])        
     unionDF00.to_file(os.path.join(outDir,'Colorado_Final.gpkg'),layer='Colorado_Final_union2000')
+    unionDF10.to_file(os.path.join(outDir,'Colorado_Final.gpkg'),layer='Colorado_Final_union2010')
+
     #joinDF['polyLen_3'] = joinDF.apply(lambda row: geomLen(row.geometry), axis=1)
     #joinDF['geomZscore_3'] = np.abs(stats.zscore(joinDF['polyLen2']))
     joinDF.to_file(os.path.join(outDir, 'Colorado_Final.gpkg'),layer='Colorado_Final_MH_parcels')

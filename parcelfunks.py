@@ -1,5 +1,5 @@
 import os
-import fiona
+import pyogrio
 import geopandas as gpd
 import pandas as pd
 import csv
@@ -7,10 +7,13 @@ import numpy as np
 from scipy import stats
 import warnings
 
-warnings.filterwarnings('ignore')
+gpd.options.io_engine = "pyogrio"
+
+#warnings.filterwarnings('ignore')
 
 exceptPath = r'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022\exceptions.csv'
 outDir = r'C:\Users\phwh9568\Data\ParcelAtlas'
+
 
 with open(exceptPath, 'w', newline='', encoding='utf-8') as f:
     writer = csv.writer(f)
@@ -82,8 +85,8 @@ def sumWithin(parcels,buildings):
     dfpolynew = parcels.merge(dfpivot, how='left', on='ID')
     if 'FID' in dfpolynew: #remember to switch to 'FINDEX' when running in future
         dfpolynew.rename({'APN_x':'APN', 'FID': 'Sum_Within', 'areas':'mnBlgArea'}, axis='columns',inplace=True)
-        dfpolynew['Sum_Within'].fillna(0, inplace=True)
-        dfpolynew['mnBlgArea'].fillna(0, inplace=True)
+        dfpolynew.fillna({'Sum_Within':0}, inplace=True)
+        dfpolynew.fillna({'mnBlgArea':0}, inplace=True)
         dfpolynew.drop(['ID','APN_y'], axis=1, inplace=True)
     else:
         dfpolynew.rename({'APN_x':'APN'}, axis='columns',inplace=True)
@@ -123,17 +126,13 @@ def parcelBuildings(parcel,buildings):
    
 def parcelPreFilter(parcel):   
     parcel = parcel.drop(parcel[(parcel['extZscore1'] > 3) & (parcel['Sum_Within'] < 10)].index) #dropping outlier geometries
-    parcel.drop(parcel[parcel['Sum_Within'] < new_func()].index, inplace=True) #change to 20 or 30 later
+    parcel.drop(parcel[parcel['Sum_Within'] < 5].index, inplace=True) #change to 20 or 30 later
     parcel.drop(parcel[parcel['mnBlgArea'] > 175].index, inplace=True)
     parcel.reset_index(inplace=True)
     columns = ['APN', 'APN2', 'OWNER', 'intLen','intZscore', 'extLen1','extZscore1', 'Sum_Within', 'mnBlgArea', 'geometry']
     drops = [c for c in parcel.columns if c not in columns]
     parcel.drop(drops, axis=1, inplace=True)
     return parcel
-
-def new_func():
-    return 5
-
 
 def nearSelect(parcel, mobileHomes):
     cols = parcel.columns
@@ -178,6 +177,7 @@ def parcelMHPJoin(pFilePath):
         writer.writerow(['COUNTY_FIPS','PROBLEM'])
         if os.path.exists(mhpPath):
             parcel = gpd.read_file(os.path.join(pFilePath,'parcels.shp'))
+            print(fips)
             parcel.to_crs(crs='ESRI:102003', inplace=True)
             #buildings = gpd.read_file(os.path.join(pFilePath,fips+'_Buildings.gpkg'),layer=fips+'_Buildings')
             buildings = gpd.read_file(os.path.join(pFilePath,fips+'_buildings.shp'))
@@ -204,17 +204,20 @@ def parcelMHPJoin(pFilePath):
         else:
             writer.writerow([fips,'NO MHP'])
 
-
+#blow up old {fips}.gpkg before running
 def union_intersect(pFilePath):
     fips = pFilePath.split('\\')[-1]
     with open(os.path.join(pFilePath,'exceptions.csv'),'a', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         if os.path.exists(os.path.join(pFilePath,fips+'.gpkg')) == True:
+            print(fips)
             phomes = gpd.read_file(os.path.join(pFilePath,fips+'.gpkg'), layer='MH_parcels')
-            layers = fiona.listlayers(os.path.join(pFilePath,fips+'.gpkg'))
+            layers = pyogrio.list_layers(os.path.join(pFilePath,fips+'_blocks.gpkg'))
             for layer in layers:
-                year = layer[-2:]
-                blocks = gpd.read_file(os.path.join(pFilePath,f'{fips}_blocks.gpkg'), layer=layer)
+                print(fips, layer)
+                year = layer[0][-2:]
+                blocks = gpd.read_file(os.path.join(pFilePath,f'{fips}_blocks.gpkg'), layer=layer[0])
+                print(fips,layer,'read')
                 #blocks.to_crs(crs='ESRI:102003', inplace=True)
                 blocks['blockArea_m'] = blocks['geometry'].area
                 union = blocks.overlay(phomes, how='intersection')
@@ -225,14 +228,15 @@ def union_intersect(pFilePath):
                     union.to_csv(os.path.join(pFilePath,f'union_csv20{year}.csv'))
                 else:
                     writer.writerow([fips, 'Join worked-but union missed-investigate'])
-            
+                print(fips,layer,'union complete')
 
 # need to check if all output columns are carried through
 
 def mhp_union_merge(pFilePath):
     fips = pFilePath.split('\\')[-1]
     if os.path.exists(os.path.join(pFilePath,'MHP_'+ fips +'_COSTAR.csv')):
-        mhp = pd.read_csv(os.path.join(pFilePath,'MHP_'+ fips +'_COSTAR.csv'), dtype={'MH_COUNTY_FIPS':str, 'MH_APN':str})
+        mhp = pd.read_csv(os.path.join(pFilePath,'MHP_'+ fips +'_COSTAR.csv'), dtype={'MH_COUNTY_FIPS':str, 'MH_APN':str, 'APN':str, 'APN2':str})
+        mhp['MH_APN'] = mhp['MH_APN'].str.replace('-','')
         years = ['00','10']
         for year in years:
             if os.path.exists(os.path.join(pFilePath,f'union_csv20{year}.csv')) == True:
