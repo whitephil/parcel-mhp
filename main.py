@@ -6,17 +6,17 @@ if __name__ == '__main__':
     import pandas as pd
     import geopandas as gpd
     import parcelfunks
-    import pyogrio
     import os
+    import pyogrio
     import warnings
     import winsound
 
-    #warnings.filterwarnings("ignore")
+    warnings.filterwarnings("ignore")
     #stateFips = pd.read_csv(r'C:\Users\phwh9568\Data\ParcelAtlas\stateFips.csv', dtype={'STATEFP':str})
     #stateFipsList = stateFips['STATEFP'].tolist()
     externalDrive = r'E:/'
     outDir = r'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022'
-    
+
     # THIS INVENTORY FILE IS WRONG!!! or not quite right? Need to rerun w/ updated data
     '''
     pInventory = pd.read_csv(os.path.join(externalDrive,'parcelInventory.csv'), dtype={'STATE':str,'COUNTY':str})
@@ -49,7 +49,7 @@ if __name__ == '__main__':
 
     #original
     with Pool() as pool:
-        pool.map(parcelfunks.parcelMHPJoin,parcelsPaths)
+        pool.map(parcelfunks.parcelWorker,parcelsPaths)
 
     print('Parcel-MHP Join Time:',time.time()-ti)
     
@@ -57,7 +57,7 @@ if __name__ == '__main__':
     ti = time.time()
     
     with Pool() as pool:
-        pool.map(parcelfunks.union_intersect,parcelsPaths)
+        pool.map(parcelfunks.unionWorker,parcelsPaths)
     
     print('MHParcels-Blocks Union Time:',time.time()-ti)
     
@@ -69,6 +69,7 @@ if __name__ == '__main__':
 
     print('Table merge time:',time.time()-ti)
     
+    
     years = ['2000','2010']
     for year in years:
         yr = year[-2:]
@@ -76,10 +77,10 @@ if __name__ == '__main__':
         exceptionsFinalDF = pd.DataFrame()
         for path in parcelsPaths:
             fips = path.split('\\')[-1]
-            countyEx = pd.read_csv(os.path.join(path,'exceptions.csv'))
+            countyEx = pd.read_csv(os.path.join(path,'exceptions.csv'), dtype={'COUNTY_FIPS':str})
             exceptionsFinalDF = pd.concat([exceptionsFinalDF,countyEx])
             if os.path.exists(os.path.join(path,f'MHP_{fips}_{year}.csv')):
-                countyDF = pd.read_csv(os.path.join(path,f'MHP_{fips}_{year}.csv'), dtype={f'STATEFP{yr}':str,f'COUNTYFP{yr}':str,f'TRACTCE{yr}':str,f'BLOCKCE{yr}':str,f'GEOID{yr}':str,f'MTFCC{yr}':str,f'UACE{yr}':str,f'GEOID{yr}':str, 'MH_COUNTY_FIPS':str, 'MH_APN':str})
+                countyDF = pd.read_csv(os.path.join(path,f'MHP_{fips}_{year}.csv'), dtype={f'STATEFP{yr}':str,f'COUNTYFP{yr}':str,f'TRACTCE{yr}':str,f'BLOCKCE{yr}':str,f'GEOID{yr}':str,f'MTFCC{yr}':str,f'UACE{yr}':str,f'GEOID{yr}':str, 'MH_COUNTY_FIPS':str, 'MH_APN':str, 'APN':str, 'APN2':str})
                 stateFinalDF = pd.concat([stateFinalDF,countyDF])                
         stateFinalDF.drop(stateFinalDF.filter(regex='Unnamed*').columns,axis=1, inplace=True)
         #stateFinalDF.to_csv(os.path.join(externalDrive,f'State_{state}',f'{state}_{year}_final.csv'))
@@ -89,30 +90,50 @@ if __name__ == '__main__':
     #co_22_dir = r'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022'
         
         # need to iterate through fiona layers list do do this correctly, and perhaps abovegit 
-    
-    unionDF00 = pd.DataFrame()
-    unionDF10 = pd.DataFrame()
-    joinDF = pd.DataFrame()
+    # REFACTOR THIS!!!!!
+    COSTAR_unionDF00 = pd.DataFrame()
+    COSTAR_unionDF10 = pd.DataFrame()
+    COSTAR_joinDF = pd.DataFrame()
+    MHP_unionDF00 = pd.DataFrame()
+    MHP_unionDF10 = pd.DataFrame()
+    MHP_joinDF = pd.DataFrame()
     for path in parcelsPaths:
         fips = path.split('\\')[-1]        
         if os.path.exists(os.path.join(path,fips+'.gpkg')):
             layers = pyogrio.list_layers(os.path.join(path,fips+'.gpkg'))
-            if 'MH_parc_blk_union2000' in layers:
-                union00 = gpd.read_file(os.path.join(path, fips+'.gpkg'),layer='MH_parc_blk_union2000')
-                unionDF00 = pd.concat([unionDF00,union00])
-            if 'MH_parc_blk_union2010' in layers:
-                union10 = gpd.read_file(os.path.join(path, fips+'.gpkg'),layer='MH_parc_blk_union2010')
-                unionDF10 = pd.concat([unionDF10,union10])                
-            join = gpd.read_file(os.path.join(path, fips+'.gpkg'),layer='MH_parcels')
-            joinDF = pd.concat([joinDF,join])        
-    unionDF00.to_file(os.path.join(outDir,'Colorado_Final.gpkg'),layer='Colorado_Final_union2000')
-    unionDF10.to_file(os.path.join(outDir,'Colorado_Final.gpkg'),layer='Colorado_Final_union2010')
+            if 'COSTAR_parc_blk_union2000' in layers:
+                COSTAR_union00 = gpd.read_file(os.path.join(path, fips+'.gpkg'),layer='COSTAR_parc_blk_union2000')
+                COSTAR_unionDF00 = pd.concat([COSTAR_unionDF00,COSTAR_union00])
+            if 'COSTAR_parc_blk_union2010' in layers:
+                COSTAR_union10 = gpd.read_file(os.path.join(path, fips+'.gpkg'),layer='COSTAR_parc_blk_union2010')
+                COSTAR_unionDF10 = pd.concat([COSTAR_unionDF10,COSTAR_union10])                
+            if 'COSTAR_parcels' in layers:
+                COSTAR_join = gpd.read_file(os.path.join(path, fips+'.gpkg'),layer='COSTAR_parcels')
+                COSTAR_joinDF = pd.concat([COSTAR_joinDF,COSTAR_join])
+            if 'MHP_parc_blk_union2000' in layers:
+                MHP_union00 = gpd.read_file(os.path.join(path, fips+'.gpkg'),layer='MHP_parc_blk_union2000')
+                MHP_unionDF00 = pd.concat([MHP_unionDF00,MHP_union00])
+            if 'MHP_parc_blk_union2010' in layers:
+                MHP_union10 = gpd.read_file(os.path.join(path, fips+'.gpkg'),layer='MHP_parc_blk_union2010')
+                MHP_unionDF10 = pd.concat([MHP_unionDF10,MHP_union10])                
+            if 'MHP_parcels' in layers:
+                MHP_join = gpd.read_file(os.path.join(path, fips+'.gpkg'),layer='MHP')
+                MHP_joinDF = pd.concat([MHP_joinDF,MHP_join])
+                    
+    COSTAR_unionDF00.to_file(os.path.join(outDir,'Colorado_Final.gpkg'),layer='Colorado_Final_union2000')
+    COSTAR_unionDF10.to_file(os.path.join(outDir,'Colorado_Final.gpkg'),layer='Colorado_Final_union2010')
+
+    MHP_unionDF00.to_file(os.path.join(outDir,'Colorado_Final.gpkg'),layer='Colorado_Final_union2000')
+    MHP_unionDF10.to_file(os.path.join(outDir,'Colorado_Final.gpkg'),layer='Colorado_Final_union2010')
+
 
     #joinDF['polyLen_3'] = joinDF.apply(lambda row: geomLen(row.geometry), axis=1)
     #joinDF['geomZscore_3'] = np.abs(stats.zscore(joinDF['polyLen2']))
-    joinDF.to_file(os.path.join(outDir, 'Colorado_Final.gpkg'),layer='Colorado_Final_MH_parcels')
-    joinDF.to_csv(os.path.join(outDir, 'Colorado_Final.csv'))
-
+    COSTAR_joinDF.to_file(os.path.join(outDir, 'Colorado_Final.gpkg'),layer='Colorado_Final_COSTAR_parcels')
+    COSTAR_joinDF.to_csv(os.path.join(outDir, 'Colorado_Final_COSTAR.csv'))
+    
+    MHP_joinDF.to_file(os.path.join(outDir, 'Colorado_Final.gpkg'),layer='Colorado_Final_MH_parcels')
+    MHP_joinDF.to_csv(os.path.join(outDir, 'Colorado_Final_MHP.csv'))   
 
     winsound.Beep(450, 1000)  
     print('Done.')

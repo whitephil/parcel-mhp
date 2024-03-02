@@ -9,15 +9,7 @@ import warnings
 
 gpd.options.io_engine = "pyogrio"
 
-#warnings.filterwarnings('ignore')
-
-exceptPath = r'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022\exceptions.csv'
-outDir = r'C:\Users\phwh9568\Data\ParcelAtlas'
-
-
-with open(exceptPath, 'w', newline='', encoding='utf-8') as f:
-    writer = csv.writer(f)
-    writer.writerow(['COUNTY_FIPS','PROBLEM'])
+warnings.filterwarnings('ignore')
 
 
 # Filtering out outlier parcels:
@@ -96,7 +88,6 @@ def sumWithin(parcels,buildings):
     return dfpolynew
 
 
-# UPDATED VERSION IN COSTAR_prep.ipynb!!!!!
 def mhomes_prepper(mhomesPath):
     mhomes = gpd.read_file(mhomesPath)
     mhomes.sindex
@@ -108,10 +99,22 @@ def mhomes_prepper(mhomesPath):
     mhomes.rename(renames, axis='columns',inplace=True)
     return mhomes
 
+
+def costar_prepper(costarPath):
+   mhomes = gpd.read_file(costarPath, layer='COSTAR_mhps')
+   mhomes.sindex
+   columns = ['property_id', 'propertyname', 'propertycity','propertystate', 'propertycounty', 'propertyzipcode', 'latitude', 'longitude', 'parcelnumber1min','numberofunits', 'geometry']
+   renames = ['MH_prop_id', 'MH_prop_name', 'MH_prop_city', 'MH_prop_state', 'MH_prop_county', 'MH_prop_zip', 'MH_lat', 'MH_long', 'MH_APN', 'MH_units']
+   drops = [c for c in mhomes.columns if c not in columns] 
+   renames = dict(zip(columns,renames))
+   mhomes.drop(drops,axis=1, inplace=True)
+   mhomes.rename(renames, axis='columns',inplace=True)
+   return mhomes
+
 def parcelBuildings(parcel,buildings):
     parcel.drop_duplicates(subset=['geometry'], inplace=True)
     parcel = sumWithin(parcel,buildings)
-    parcel['geometry'] = parcel['geometry'].simplify(1)
+    parcel['geometry'] = parcel['geometry'].simplify(1.0)
     parcel['intLen'] = parcel.apply(lambda row: interiorLen(row.geometry), axis=1)
     parcel['intZscore'] = np.abs(stats.zscore(parcel['intLen']))
     parcel.drop(parcel[parcel.intLen >= 20].index, inplace=True) #dropping outlier inner geometries
@@ -126,13 +129,27 @@ def parcelBuildings(parcel,buildings):
    
 def parcelPreFilter(parcel):   
     parcel = parcel.drop(parcel[(parcel['extZscore1'] > 3) & (parcel['Sum_Within'] < 10)].index) #dropping outlier geometries
-    parcel.drop(parcel[parcel['Sum_Within'] < 5].index, inplace=True) #change to 20 or 30 later
+    parcel.drop(parcel[parcel['Sum_Within'] < 5].index, inplace=True) #change to 20 or 30 later? nevermind that
     parcel.drop(parcel[parcel['mnBlgArea'] > 175].index, inplace=True)
     parcel.reset_index(inplace=True)
     columns = ['APN', 'APN2', 'OWNER', 'intLen','intZscore', 'extLen1','extZscore1', 'Sum_Within', 'mnBlgArea', 'geometry']
     drops = [c for c in parcel.columns if c not in columns]
     parcel.drop(drops, axis=1, inplace=True)
     return parcel
+
+
+def apnJoin(parcel, mobileHomes):
+    parcel['APN'] = parcel['APN'].str.replace('-','')
+    mobileHomes['MH_APN'] = mobileHomes['MH_APN'].str.replace('-','')
+    apnParcel = pd.merge(parcel,mobileHomes, left_on='APN', right_on='MH_APN').drop(columns={'geometry_y'})
+    apnParcel.rename({'geometry_x':'geometry'}, axis='columns', inplace=True)
+    apnParcel['APN_JOIN'] = True
+    apnParcel['distances'] = float(-0.1)
+    cols = list(apnParcel.columns)
+    cols.remove('geometry')
+    cols.append('geometry')
+    apnParcel = apnParcel[cols]
+    return apnParcel
 
 def nearSelect(parcel, mobileHomes):
     cols = parcel.columns
@@ -149,6 +166,7 @@ def nearSelect(parcel, mobileHomes):
     concatted = pd.concat([merged,secondJoin])
     concatted.drop(['tempID','IDcheck'], axis=1, inplace=True)
     concatted['APN_JOIN'] = False
+    #print(len(concatted))
     cols = list(concatted.columns)
     cols.remove('geometry')
     cols.remove('distances')
@@ -156,104 +174,177 @@ def nearSelect(parcel, mobileHomes):
     concatted = concatted[cols]    
     return concatted
 
-def apnJoin(parcel, mobileHomes):
-    parcel['APN'] = parcel['APN'].str.replace('-','')
-    mobileHomes['MH_APN'] = mobileHomes['MH_APN'].str.replace('-','')
-    apnParcel = pd.merge(parcel,mobileHomes, left_on='APN', right_on='MH_APN').drop(columns={'geometry_y'})
-    apnParcel.rename({'geometry_x':'geometry'}, axis='columns', inplace=True)
-    apnParcel['APN_JOIN'] = True
-    apnParcel['distances'] = float(-0.1)
-    cols = list(apnParcel.columns)
-    cols.remove('geometry')
-    cols.append('geometry')
-    apnParcel = apnParcel[cols]
-    return apnParcel
+def parcelCostarJoin(parcel,costarHomes):
+    apnParcel = apnJoin(parcel,costarHomes)
+    phomes = nearSelect(parcel,costarHomes)
+    phomes = pd.concat([apnParcel,phomes])
+    #DROP duplicates if APN is null?
+    phomesNullAPNs = phomes.loc[phomes['APN'].str.len() < 2]
+    phomes = phomes.sort_values(by=['MH_prop_id','APN_JOIN'], ascending=False).drop_duplicates(subset=['MH_prop_id'], keep='first')
+    phomes = pd.concat([phomes,phomesNullAPNs])
+    #phomes.drop_duplicates(subset=['geometry'], inplace=True)
+    phomes.sort_values(by=['APN'])
+    phomes.reset_index(inplace=True)
+    phomes.drop(columns={'index'},inplace=True)            
+    phomes = unitFilter(phomes)
+    return phomes
 
-def parcelMHPJoin(pFilePath):    
+def parcelMHPJoin(parcel,mobileHomes):
+    phomes = nearSelect(parcel,mobileHomes)
+    phomes.sort_values(by=['APN'])
+    phomes.reset_index(inplace=True)
+    phomes.drop(columns={'index'},inplace=True)  
+    return phomes
+
+def duplicateCheck(fips,phomes, writer):
+    if len(phomes) > len(phomes['APN'].unique()):
+        phomes['duplicated'] = phomes.duplicated(subset='APN', keep=False)
+        dups = phomes.loc[phomes['duplicated'] == True]
+        for i in range(len(dups)):            
+            if len(dups.iloc[i]['APN']) > 2:
+                if 'MH_prop_id' in dups.columns == True:
+                    values = dups.iloc[i][['APN','MH_prop_id']].values
+                    writer.writerow([fips,'DUPLICATE',f'APN:{values[0]}',f'propID:{values[1]}'])
+                elif 'MHPID' in dups.columns == True:
+                    values = dups.iloc[i][['APN','MHPID']].values
+                    writer.writerow([fips,'DUPLICATE',f'APN:{values[0]}',f'MHPID:{values[1]}'])
+# FIX WRITER HERE
+
+def parcelWorker(pFilePath):    
     fips = pFilePath.split('\\')[-1]
-    mhpPath = os.path.join(pFilePath,fips+'_COSTAR_mhps.gpkg')
+    costarPath = os.path.join(pFilePath,fips+'_COSTAR_mhps.gpkg')
+    mhpPath = os.path.join(pFilePath,fips+'_mhps_OG.gpkg')
     with open(os.path.join(pFilePath,'exceptions.csv'),'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        writer.writerow(['COUNTY_FIPS','PROBLEM'])
-        if os.path.exists(mhpPath):
+        writer.writerow(['COUNTY_FIPS','PROBLEM','NOTE_1','NOTE_2'])
+        if os.path.exists(costarPath) or os.path.exists(mhpPath):
             parcel = gpd.read_file(os.path.join(pFilePath,'parcels.shp'))
             print(fips)
             parcel.to_crs(crs='ESRI:102003', inplace=True)
             #buildings = gpd.read_file(os.path.join(pFilePath,fips+'_Buildings.gpkg'),layer=fips+'_Buildings')
             buildings = gpd.read_file(os.path.join(pFilePath,fips+'_buildings.shp'))
             buildings.to_crs(crs='ESRI:102003', inplace=True)
-            mobileHomes = gpd.read_file(mhpPath)
-            mobileHomes.to_crs(crs='ESRI:102003', inplace=True)
             parcel = parcelBuildings(parcel,buildings)  
             parcel = parcelPreFilter(parcel)
-            apnParcel = apnJoin(parcel,mobileHomes)
-            phomes = nearSelect(parcel,mobileHomes)
-            phomes = pd.concat([apnParcel,phomes])
-            phomesNullAPNs = phomes.loc[phomes['APN'].str.len() < 2]
-            phomes = phomes.sort_values(by=['APN','APN_JOIN'], ascending=False).drop_duplicates(subset=['APN'], keep='first')
-            phomes = pd.concat([phomes,phomesNullAPNs])
-            phomes.drop_duplicates(subset=['geometry'], inplace=True)
-            phomes.reset_index(inplace=True)
-            phomes.drop(columns={'index'},inplace=True)            
-            phomes = unitFilter(phomes)
-
-            if len(phomes) > 0:
-                phomes.to_file(os.path.join(pFilePath,fips+'.gpkg'),driver='GPKG', layer='MH_parcels')
+            parcel['UNIQID'] = np.random.randint(low=1, high=1000000000, size=len(parcel))
+            #run on COSTAR mhp data:
+            if os.path.exists(costarPath):
+                costarHomes = gpd.read_file(costarPath)
+                costarHomes.to_crs(crs='ESRI:102003', inplace=True)
+                costarParcels = parcelCostarJoin(parcel,costarHomes)
+                duplicateCheck(fips,costarParcels, writer)        
+                costarParcels['COSTAR'] = 1
+                #next three lines removing costar matches from original parcel dataset
+                parcel = parcel.merge(costarParcels[['COSTAR', 'UNIQID']], on='UNIQID')
+                parcel = parcel.loc[parcel['COSTAR']!=1]
+                parcel.drop(columns=['COSTAR','UNIQID'], inplace=True)
+                if len(costarParcels) > 0:
+                    costarParcels.to_file(os.path.join(pFilePath,fips+'.gpkg'),driver='GPKG', layer='COSTAR_parcels')
+                else:
+                    writer.writerow([fips,'No COSTAR-Parcel Joins'])                
             else:
-                writer.writerow([fips,'No MHP-Parcel Joins'])
+                writer.writerow([fips,'NO COSTAR MHPs'])
+            #any remaining parcels try joining with DHS mhp dataset:
+            if os.path.exists(mhpPath):
+                mobileHomes = gpd.read_file(mhpPath)
+                mobileHomes.to_crs(crs='ESRI:102003', inplace=True)
+                mhpParcels = parcelMHPJoin(parcel,mobileHomes)
+                duplicateCheck(fips,mhpParcels,writer)
+                if len(mhpParcels) > 0:
+                    mhpParcels.to_file(os.path.join(pFilePath,fips+'.gpkg'),driver='GPKG', layer='mhp_parcels')
+                else:
+                    writer.writerow([fips,'No MHP-Parcel Joins'])
+            else:
+                writer.writerow([fips,'NO MHPs'])
         else:
-            writer.writerow([fips,'NO MHP'])
+            writer.writerow([fips,'NO COSTAR or MHPs'])
 
 #blow up old {fips}.gpkg before running
-def union_intersect(pFilePath):
-    fips = pFilePath.split('\\')[-1]
+
+def union_intersect(pFilePath, fips, blocks, phomes, year, mhpVersion):
     with open(os.path.join(pFilePath,'exceptions.csv'),'a', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        if os.path.exists(os.path.join(pFilePath,fips+'.gpkg')) == True:
-            print(fips)
-            phomes = gpd.read_file(os.path.join(pFilePath,fips+'.gpkg'), layer='MH_parcels')
-            layers = pyogrio.list_layers(os.path.join(pFilePath,fips+'_blocks.gpkg'))
-            for layer in layers:
-                print(fips, layer)
-                year = layer[0][-2:]
-                blocks = gpd.read_file(os.path.join(pFilePath,f'{fips}_blocks.gpkg'), layer=layer[0])
-                print(fips,layer,'read')
-                #blocks.to_crs(crs='ESRI:102003', inplace=True)
-                blocks['blockArea_m'] = blocks['geometry'].area
-                union = blocks.overlay(phomes, how='intersection')
-                union['unionArea_m'] = union['geometry'].area
-                union['blockParcel_ratio'] = (union['unionArea_m']/union['blockArea_m']) *100
-                if len(union) > 0:
-                    union.to_file(os.path.join(pFilePath,fips+'.gpkg'),driver='GPKG', layer=f'MH_parc_blk_union20{year}')
-                    union.to_csv(os.path.join(pFilePath,f'union_csv20{year}.csv'))
-                else:
-                    writer.writerow([fips, 'Join worked-but union missed-investigate'])
-                print(fips,layer,'union complete')
+        #blocks.to_crs(crs='ESRI:102003', inplace=True)
+        blocks['blockArea_m'] = blocks['geometry'].area
+        union = blocks.overlay(phomes, how='intersection')
+        union['unionArea_m'] = union['geometry'].area
+        union['blockParcel_ratio'] = (union['unionArea_m']/union['blockArea_m']) *100
+        if mhpVersion == 'COSTAR':
+            if len(union) > 0:
+                union.to_file(os.path.join(pFilePath,fips+'.gpkg'),driver='GPKG', layer=f'COSTAR_parc_blk_union20{year}')
+                union.to_csv(os.path.join(pFilePath,f'COSTAR_union_csv20{year}.csv'))
+            else:
+                writer.writerow([fips, 'COSTAR join worked-but union missed-investigate'])
+        if mhpVersion == 'MHPS':
+            if len(union) > 0:
+                union.to_file(os.path.join(pFilePath,fips+'.gpkg'),driver='GPKG', layer=f'MHP_parc_blk_union20{year}')
+                union.to_csv(os.path.join(pFilePath,f'MHP_union_csv20{year}.csv'))
+            else:
+                writer.writerow([fips, 'MHP join worked-but union missed-investigate'])
+
+def unionWorker(pFilePath):
+    fips = pFilePath.split('\\')[-1]
+    if os.path.exists(os.path.join(pFilePath,fips+'.gpkg')) == True:
+        parcelLayers = pyogrio.list_layers(os.path.join(pFilePath,fips+'.gpkg'))            
+        blockLayers = pyogrio.list_layers(os.path.join(pFilePath,fips+'_blocks.gpkg'))
+        for blayer in blockLayers:
+            year = blayer[0][-2:]
+            blocks = gpd.read_file(os.path.join(pFilePath,'{fips}_blocks.gpkg'), layer=blayer[0])
+            if 'costar_parcels' in parcelLayers:
+                mhpVersion = 'COSTAR'
+                phomes = gpd.read_file(os.path.join(pFilePath,fips+'.gpkg'), layer='costar_parcels')
+                union_intersect(pFilePath, fips, blocks, phomes, year, mhpVersion)    
+            if 'mhp_parcels' in parcelLayers:
+                mhpVersion = 'MHPS'
+                phomes = gpd.read_file(os.path.join(pFilePath,fips+'.gpkg'), layer='mhp_parcels')
+                union_intersect(pFilePath, fips, blocks, phomes, year, mhpVersion) 
+                
+
 
 # need to check if all output columns are carried through
 
-def mhp_union_merge(pFilePath):
-    fips = pFilePath.split('\\')[-1]
-    if os.path.exists(os.path.join(pFilePath,'MHP_'+ fips +'_COSTAR.csv')):
-        mhp = pd.read_csv(os.path.join(pFilePath,'MHP_'+ fips +'_COSTAR.csv'), dtype={'MH_COUNTY_FIPS':str, 'MH_APN':str, 'APN':str, 'APN2':str})
+
+def mhp_union_merge(version,versionPath,fips):
+    if version == 'COSTAR':
+        mhp = pd.read_csv(os.path.join(versionPath,'MHP_'+ fips +'_COSTAR.csv'), dtype={'MH_COUNTY_FIPS':str, 'MH_APN':str, 'APN':str, 'APN2':str})
         mhp['MH_APN'] = mhp['MH_APN'].str.replace('-','')
-        years = ['00','10']
-        for year in years:
-            if os.path.exists(os.path.join(pFilePath,f'union_csv20{year}.csv')) == True:
-                union = pd.read_csv(os.path.join(pFilePath,f'union_csv20{year}.csv'), dtype={f'GEOID{year}':str,f'STATEFP{year}':str, f'COUNTYFP{year}':str, f'TRACTCE{year}':str,f'BLOCKCE{year}':str, 'MH_APN':str})
-                try:
-                    mhp_union_merge = mhp.merge(union, on='MH_APN', how = 'outer')
-                except:
-                    print(fips)
-                    pass
-                #mhp_union_merge.drop(['Unnamed: 0_x', 'Unnamed: 0_y'], axis=1, inplace=True)
-                mhp_union_merge.drop(mhp_union_merge.filter(regex='_y$').columns, axis=1, inplace=True)
-                renames_x = mhp_union_merge.filter(regex='_x$').columns
-                renames = [x.split('_x')[0] for x in renames_x]
-                renames = dict(zip(renames_x,renames))
-                mhp_union_merge.rename(renames, axis='columns',inplace=True)
-                mhp_union_merge.drop(mhp_union_merge.filter(regex='Unnamed*').columns,axis=1, inplace=True)
-                mhp_union_merge.to_csv(os.path.join(pFilePath, f'MHP_{fips}_20{year}.csv'))
-            else:
-                mhp.drop(mhp.filter(regex='Unnamed*').columns,axis=1, inplace=True)
-                mhp.to_csv(os.path.join(pFilePath, f'MHP_{fips}_20{year}.csv'))
+        dtype = {f'GEOID{year}':str,f'STATEFP{year}':str, f'COUNTYFP{year}':str, f'TRACTCE{year}':str,f'BLOCKCE{year}':str, 'MH_APN':str}
+    if version == 'MHP':
+        mhp = pd.read_csv(os.path.join(versionPath,'MHP_'+ fips +'.csv'), dtype={'COUNTYFIPS':str, 'MHPID':str, 'APN':str, 'APN2':str})
+        dtype = {f'GEOID{year}':str,f'STATEFP{year}':str, f'COUNTYFP{year}':str, f'TRACTCE{year}':str,f'BLOCKCE{year}':str, 'MHPID':str}
+    years = ['00','10']
+    for year in years:
+        if os.path.exists(os.path.join(versionPath,f'{version}_union_csv20{year}.csv')) == True:
+            union = pd.read_csv(os.path.join(versionPath,f'{version}_union_csv20{year}.csv'), dtype=dtype)
+            try:
+                if version == 'COSTAR':
+                    mhp_union_merge = mhp.merge(union, on='MH_prop_id', how = 'outer')
+                if version == 'MHP':
+                    mhp_union_merge = mhp.merge(union, on='MHPID', how = 'outer')
+            except:
+                print(fips, version, 'mhp-union merge problem')
+                pass
+            #mhp_union_merge.drop(['Unnamed: 0_x', 'Unnamed: 0_y'], axis=1, inplace=True)
+            mhp_union_merge.drop(mhp_union_merge.filter(regex='_y$').columns, axis=1, inplace=True)
+            renames_x = mhp_union_merge.filter(regex='_x$').columns
+            renames = [x.split('_x')[0] for x in renames_x]
+            renames = dict(zip(renames_x,renames))
+            mhp_union_merge.rename(renames, axis='columns',inplace=True)
+            mhp_union_merge.drop(mhp_union_merge.filter(regex='Unnamed*').columns,axis=1, inplace=True)
+            mhp_union_merge.to_csv(os.path.join(versionPath, f'{version}_{fips}_20{year}.csv'))
+        else:
+            mhp.drop(mhp.filter(regex='Unnamed*').columns,axis=1, inplace=True)
+            mhp.to_csv(os.path.join(versionPath, f'{version}_{fips}_20{year}.csv'))
+
+
+def mergeWorker(pFilePath):
+    fips = pFilePath.split('\\')[-1]
+    costarPath = os.path.join(pFilePath,'MHP_'+ fips +'_COSTAR.csv')
+    mhpPath = os.path.join(pFilePath,'MHP_'+ fips +'.csv')
+    if os.path.exists(costarPath):
+        version = 'COSTAR'
+        mhp_union_merge(version,costarPath,fips)
+
+    if os.path.exists(mhpPath):
+        version = 'MHP'
+        mhp_union_merge(version,mhpPath,fips)        
