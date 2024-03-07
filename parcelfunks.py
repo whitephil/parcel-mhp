@@ -153,6 +153,8 @@ def apnJoin(parcel, mobileHomes):
 
 def nearSelect(parcel, mobileHomes):
     cols = parcel.columns
+    if 'tempID' in cols:
+        cols = cols.drop('tempID')
     parcel['tempID'] = parcel.index
     mhps_parcels_near = gpd.sjoin_nearest(mobileHomes,parcel,max_distance=50, distance_col='distances')
     mhps_parcels_near.drop(cols, axis=1, inplace=True)
@@ -202,10 +204,10 @@ def duplicateCheck(fips,phomes, writer):
         dups = phomes.loc[phomes['duplicated'] == True]
         for i in range(len(dups)):            
             if len(dups.iloc[i]['APN']) > 2:
-                if 'MH_prop_id' in dups.columns == True:
+                if 'MH_prop_id' in dups.columns:
                     values = dups.iloc[i][['APN','MH_prop_id']].values
                     writer.writerow([fips,'DUPLICATE',f'APN:{values[0]}',f'propID:{values[1]}'])
-                elif 'MHPID' in dups.columns == True:
+                elif 'MHPID' in dups.columns:
                     values = dups.iloc[i][['APN','MHPID']].values
                     writer.writerow([fips,'DUPLICATE',f'APN:{values[0]}',f'MHPID:{values[1]}'])
 # FIX WRITER HERE
@@ -227,17 +229,18 @@ def parcelWorker(pFilePath):
             parcel = parcelBuildings(parcel,buildings)  
             parcel = parcelPreFilter(parcel)
             parcel['UNIQID'] = np.random.randint(low=1, high=1000000000, size=len(parcel))
+            print(parcel['APN'])
             #run on COSTAR mhp data:
             if os.path.exists(costarPath):
-                costarHomes = gpd.read_file(costarPath)
+                costarHomes = gpd.read_file(costarPath, layer='COSTAR_mhps')
                 costarHomes.to_crs(crs='ESRI:102003', inplace=True)
                 costarParcels = parcelCostarJoin(parcel,costarHomes)
-                duplicateCheck(fips,costarParcels, writer)        
+                duplicateCheck(fips,costarParcels, writer)
                 costarParcels['COSTAR'] = 1
                 #next three lines removing costar matches from original parcel dataset
-                parcel = parcel.merge(costarParcels[['COSTAR', 'UNIQID']], on='UNIQID')
+                parcel = parcel.merge(costarParcels[['COSTAR', 'UNIQID']], how='left', on='UNIQID')
                 parcel = parcel.loc[parcel['COSTAR']!=1]
-                parcel.drop(columns=['COSTAR','UNIQID'], inplace=True)
+                #parcel.drop(columns=['COSTAR','UNIQID'], inplace=True)
                 if len(costarParcels) > 0:
                     costarParcels.to_file(os.path.join(pFilePath,fips+'.gpkg'),driver='GPKG', layer='COSTAR_parcels')
                 else:
@@ -245,21 +248,22 @@ def parcelWorker(pFilePath):
             else:
                 writer.writerow([fips,'NO COSTAR MHPs'])
             #any remaining parcels try joining with DHS mhp dataset:
-            if os.path.exists(mhpPath):
-                mobileHomes = gpd.read_file(mhpPath)
-                mobileHomes.to_crs(crs='ESRI:102003', inplace=True)
-                mhpParcels = parcelMHPJoin(parcel,mobileHomes)
-                duplicateCheck(fips,mhpParcels,writer)
-                if len(mhpParcels) > 0:
-                    mhpParcels.to_file(os.path.join(pFilePath,fips+'.gpkg'),driver='GPKG', layer='mhp_parcels')
+            if len(parcel) > 0:
+                if os.path.exists(mhpPath):
+                    mobileHomes = gpd.read_file(mhpPath, layer=f'{fips}_MHPS_OG_prepped')
+                    mobileHomes.to_crs(crs='ESRI:102003', inplace=True)
+                    mhpParcels = parcelMHPJoin(parcel,mobileHomes)
+                    duplicateCheck(fips,mhpParcels,writer)
+                    if len(mhpParcels) > 0:
+                        mhpParcels.to_file(os.path.join(pFilePath,fips+'.gpkg'),driver='GPKG', layer='MHP_parcels')
+                    else:
+                        writer.writerow([fips,'No MHP-Parcel Joins'])
                 else:
-                    writer.writerow([fips,'No MHP-Parcel Joins'])
-            else:
-                writer.writerow([fips,'NO MHPs'])
+                    writer.writerow([fips,'NO MHPs'])
+            else: writer.writerow([fips,'No remaining parcels post-costar join'])
         else:
             writer.writerow([fips,'NO COSTAR or MHPs'])
 
-#blow up old {fips}.gpkg before running
 
 def union_intersect(pFilePath, fips, blocks, phomes, year, mhpVersion):
     with open(os.path.join(pFilePath,'exceptions.csv'),'a', newline='', encoding='utf-8') as f:
@@ -289,62 +293,58 @@ def unionWorker(pFilePath):
         blockLayers = pyogrio.list_layers(os.path.join(pFilePath,fips+'_blocks.gpkg'))
         for blayer in blockLayers:
             year = blayer[0][-2:]
-            blocks = gpd.read_file(os.path.join(pFilePath,'{fips}_blocks.gpkg'), layer=blayer[0])
-            if 'costar_parcels' in parcelLayers:
+            blocks = gpd.read_file(os.path.join(pFilePath,f'{fips}_blocks.gpkg'), layer=blayer[0])
+            if 'COSTAR_parcels' in parcelLayers:
                 mhpVersion = 'COSTAR'
-                phomes = gpd.read_file(os.path.join(pFilePath,fips+'.gpkg'), layer='costar_parcels')
+                phomes = gpd.read_file(os.path.join(pFilePath,fips+'.gpkg'), layer='COSTAR_parcels')
                 union_intersect(pFilePath, fips, blocks, phomes, year, mhpVersion)    
-            if 'mhp_parcels' in parcelLayers:
+            if 'MHP_parcels' in parcelLayers:
                 mhpVersion = 'MHPS'
-                phomes = gpd.read_file(os.path.join(pFilePath,fips+'.gpkg'), layer='mhp_parcels')
+                phomes = gpd.read_file(os.path.join(pFilePath,fips+'.gpkg'), layer='MHP_parcels')
                 union_intersect(pFilePath, fips, blocks, phomes, year, mhpVersion) 
                 
 
 
 # need to check if all output columns are carried through
 
-
-def mhp_union_merge(version,versionPath,fips):
-    if version == 'COSTAR':
-        mhp = pd.read_csv(os.path.join(versionPath,'MHP_'+ fips +'_COSTAR.csv'), dtype={'MH_COUNTY_FIPS':str, 'MH_APN':str, 'APN':str, 'APN2':str})
-        mhp['MH_APN'] = mhp['MH_APN'].str.replace('-','')
-        dtype = {f'GEOID{year}':str,f'STATEFP{year}':str, f'COUNTYFP{year}':str, f'TRACTCE{year}':str,f'BLOCKCE{year}':str, 'MH_APN':str}
-    if version == 'MHP':
-        mhp = pd.read_csv(os.path.join(versionPath,'MHP_'+ fips +'.csv'), dtype={'COUNTYFIPS':str, 'MHPID':str, 'APN':str, 'APN2':str})
-        dtype = {f'GEOID{year}':str,f'STATEFP{year}':str, f'COUNTYFP{year}':str, f'TRACTCE{year}':str,f'BLOCKCE{year}':str, 'MHPID':str}
+def mhp_union_merge(fips,version,pFilePath,versionName):    
     years = ['00','10']
     for year in years:
-        if os.path.exists(os.path.join(versionPath,f'{version}_union_csv20{year}.csv')) == True:
-            union = pd.read_csv(os.path.join(versionPath,f'{version}_union_csv20{year}.csv'), dtype=dtype)
-            try:
-                if version == 'COSTAR':
-                    mhp_union_merge = mhp.merge(union, on='MH_prop_id', how = 'outer')
-                if version == 'MHP':
-                    mhp_union_merge = mhp.merge(union, on='MHPID', how = 'outer')
-            except:
-                print(fips, version, 'mhp-union merge problem')
-                pass
+        if version == 'COSTAR':
+            mhp = pd.read_csv(os.path.join(pFilePath,versionName), dtype={'MH_COUNTY_FIPS':str, 'MH_APN':str})
+            mhp['MH_APN'] = mhp['MH_APN'].str.replace('-','')
+            dtype = {f'GEOID{year}':str,f'STATEFP{year}':str, f'COUNTYFP{year}':str, f'TRACTCE{year}':str,f'BLOCKCE{year}':str, 'MH_APN':str, 'APN':str, 'APN2':str}
+        if version == 'MHP':
+            mhp = pd.read_csv(os.path.join(pFilePath,versionName), dtype={'COUNTYFIPS':str, 'MHPID':str})
+            dtype = {f'GEOID{year}':str,f'STATEFP{year}':str, f'COUNTYFP{year}':str, f'TRACTCE{year}':str,f'BLOCKCE{year}':str, 'MHPID':str}
+        unionPath = os.path.join(pFilePath,f'{version}_union_csv20{year}.csv')
+        if os.path.exists(unionPath):
+            union = pd.read_csv(unionPath, dtype=dtype)
+            if version == 'COSTAR':
+                mhp_union = mhp.merge(union, on='MH_prop_id', how = 'outer')
+            if version == 'MHP':
+                mhp_union = mhp.merge(union, on='MHPID', how = 'outer')
             #mhp_union_merge.drop(['Unnamed: 0_x', 'Unnamed: 0_y'], axis=1, inplace=True)
-            mhp_union_merge.drop(mhp_union_merge.filter(regex='_y$').columns, axis=1, inplace=True)
-            renames_x = mhp_union_merge.filter(regex='_x$').columns
+            mhp_union.drop(mhp_union.filter(regex='_y$').columns, axis=1, inplace=True)
+            renames_x = mhp_union.filter(regex='_x$').columns
             renames = [x.split('_x')[0] for x in renames_x]
             renames = dict(zip(renames_x,renames))
-            mhp_union_merge.rename(renames, axis='columns',inplace=True)
-            mhp_union_merge.drop(mhp_union_merge.filter(regex='Unnamed*').columns,axis=1, inplace=True)
-            mhp_union_merge.to_csv(os.path.join(versionPath, f'{version}_{fips}_20{year}.csv'))
+            mhp_union.rename(renames, axis='columns',inplace=True)
+            mhp_union.drop(mhp_union.filter(regex='Unnamed*').columns,axis=1, inplace=True)
+            mhp_union.to_csv(os.path.join(pFilePath, f'{version}_{fips}_20{year}.csv'))
         else:
             mhp.drop(mhp.filter(regex='Unnamed*').columns,axis=1, inplace=True)
-            mhp.to_csv(os.path.join(versionPath, f'{version}_{fips}_20{year}.csv'))
+            mhp.to_csv(os.path.join(pFilePath, f'{version}_{fips}_20{year}.csv'))
 
 
 def mergeWorker(pFilePath):
     fips = pFilePath.split('\\')[-1]
-    costarPath = os.path.join(pFilePath,'MHP_'+ fips +'_COSTAR.csv')
-    mhpPath = os.path.join(pFilePath,'MHP_'+ fips +'.csv')
-    if os.path.exists(costarPath):
+    costarName = f'COSTAR_{fips}.csv'
+    mhpName = f'MHP_{fips}.csv'
+    if os.path.exists(os.path.join(pFilePath, costarName)):
         version = 'COSTAR'
-        mhp_union_merge(version,costarPath,fips)
+        mhp_union_merge(fips,version,pFilePath,costarName)
 
-    if os.path.exists(mhpPath):
+    if os.path.exists(os.path.join(pFilePath,mhpName)):
         version = 'MHP'
-        mhp_union_merge(version,mhpPath,fips)        
+        mhp_union_merge(fips,version,pFilePath,mhpName)        

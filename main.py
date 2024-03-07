@@ -15,7 +15,12 @@ if __name__ == '__main__':
     #stateFips = pd.read_csv(r'C:\Users\phwh9568\Data\ParcelAtlas\stateFips.csv', dtype={'STATEFP':str})
     #stateFipsList = stateFips['STATEFP'].tolist()
     externalDrive = r'E:/'
-    outDir = r'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022'
+    state = '08'
+    
+    stateDir = rf'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022\CO_2022' #change later to {state}
+    outDir = rf'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022\{state}_output'
+    if os.path.exists(rf'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022\{state}_output') == False:
+        os.mkdir(outDir)
 
     # THIS INVENTORY FILE IS WRONG!!! or not quite right? Need to rerun w/ updated data
     '''
@@ -34,7 +39,6 @@ if __name__ == '__main__':
             # perhaps set up for loop first over stateFipsList here to form all paths? Or maybe run one state at a time.
             
     # Colorado:    
-    state = '08'
     CO_path = r'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022\Counties'
     #CO_pInventory = pInventory.loc[pInventory['STATE']=='08']
     CO_pInventory = pd.read_csv(r'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022\counties\ColoradoInventory.csv', dtype={'STATE':str,'COUNTY':str})
@@ -47,93 +51,67 @@ if __name__ == '__main__':
 
     ti = time.time()
 
-    #original
+    # primary workflow parallel tasks:
     with Pool() as pool:
         pool.map(parcelfunks.parcelWorker,parcelsPaths)
 
     print('Parcel-MHP Join Time:',time.time()-ti)
-    
 
     ti = time.time()
     
     with Pool() as pool:
         pool.map(parcelfunks.unionWorker,parcelsPaths)
+        pool.map(parcelfunks.mergeWorker,parcelsPaths)
+    print('Union and Merge Steps Time:',time.time()-ti)
     
-    print('MHParcels-Blocks Union Time:',time.time()-ti)
-    
-
-    ti = time.time()
-
-    with Pool() as pool:
-        pool.map(parcelfunks.mhp_union_merge,parcelsPaths)
-
-    print('Table merge time:',time.time()-ti)
-    
-    
+    # outputs:
+    versions = {'COSTAR':{'_parcels',
+                        '_parc_blk_union2000',
+                        '_parc_blk_union2010'}, 
+                'MHP':{'_parcels',
+                        '_parc_blk_union2000',
+                        '_parc_blk_union2010'}}
     years = ['2000','2010']
-    for year in years:
-        yr = year[-2:]
-        stateFinalDF = pd.DataFrame()
-        exceptionsFinalDF = pd.DataFrame()
-        for path in parcelsPaths:
-            fips = path.split('\\')[-1]
-            countyEx = pd.read_csv(os.path.join(path,'exceptions.csv'), dtype={'COUNTY_FIPS':str})
-            exceptionsFinalDF = pd.concat([exceptionsFinalDF,countyEx])
-            if os.path.exists(os.path.join(path,f'MHP_{fips}_{year}.csv')):
-                countyDF = pd.read_csv(os.path.join(path,f'MHP_{fips}_{year}.csv'), dtype={f'STATEFP{yr}':str,f'COUNTYFP{yr}':str,f'TRACTCE{yr}':str,f'BLOCKCE{yr}':str,f'GEOID{yr}':str,f'MTFCC{yr}':str,f'UACE{yr}':str,f'GEOID{yr}':str, 'MH_COUNTY_FIPS':str, 'MH_APN':str, 'APN':str, 'APN2':str})
-                stateFinalDF = pd.concat([stateFinalDF,countyDF])                
-        stateFinalDF.drop(stateFinalDF.filter(regex='Unnamed*').columns,axis=1, inplace=True)
-        #stateFinalDF.to_csv(os.path.join(externalDrive,f'State_{state}',f'{state}_{year}_final.csv'))
-        stateFinalDF.to_csv(os.path.join(CO_path,f'{state}_{year}_final.csv'))
-        exceptionsFinalDF.to_csv(os.path.join(outDir,'exceptions.csv'))
 
-    #co_22_dir = r'C:\Users\phwh9568\Data\ParcelAtlas\CO_2022'
-        
-        # need to iterate through fiona layers list do do this correctly, and perhaps abovegit 
-    # REFACTOR THIS!!!!!
-    COSTAR_unionDF00 = pd.DataFrame()
-    COSTAR_unionDF10 = pd.DataFrame()
-    COSTAR_joinDF = pd.DataFrame()
-    MHP_unionDF00 = pd.DataFrame()
-    MHP_unionDF10 = pd.DataFrame()
-    MHP_joinDF = pd.DataFrame()
+    for version in versions.keys():    
+        for year in years:
+            yr = year[-2:]
+            outDF = pd.DataFrame()      
+            for path in parcelsPaths:
+                fips = path.split('\\')[-1]                
+                dtype={f'STATEFP{yr}':str,f'COUNTYFP{yr}':str,f'TRACTCE{yr}':str,f'BLOCKCE{yr}':str,f'GEOID{yr}':str,f'MTFCC{yr}':str,f'UACE{yr}':str,f'GEOID{yr}':str, 'MH_COUNTY_FIPS':str}
+                if version == 'COSTAR':
+                    dtype.update({'MH_APN':str, 'APN':str, 'APN2':str})            
+                filePath = os.path.join(path,f'{version}_{fips}_{year}.csv')            
+                if os.path.exists(filePath):
+                    unionDF = pd.read_csv(filePath,dtype=dtype)
+                    outDF = pd.concat([outDF,unionDF])
+            outDF.drop(outDF.filter(regex='Unnamed*').columns,axis=1, inplace=True)
+            outDF.to_csv(os.path.join(outDir, f'{state}_{version}_{year}_final.csv'))
+
+    exceptionsFinalDF = pd.DataFrame()
     for path in parcelsPaths:
-        fips = path.split('\\')[-1]        
-        if os.path.exists(os.path.join(path,fips+'.gpkg')):
-            layers = pyogrio.list_layers(os.path.join(path,fips+'.gpkg'))
-            if 'COSTAR_parc_blk_union2000' in layers:
-                COSTAR_union00 = gpd.read_file(os.path.join(path, fips+'.gpkg'),layer='COSTAR_parc_blk_union2000')
-                COSTAR_unionDF00 = pd.concat([COSTAR_unionDF00,COSTAR_union00])
-            if 'COSTAR_parc_blk_union2010' in layers:
-                COSTAR_union10 = gpd.read_file(os.path.join(path, fips+'.gpkg'),layer='COSTAR_parc_blk_union2010')
-                COSTAR_unionDF10 = pd.concat([COSTAR_unionDF10,COSTAR_union10])                
-            if 'COSTAR_parcels' in layers:
-                COSTAR_join = gpd.read_file(os.path.join(path, fips+'.gpkg'),layer='COSTAR_parcels')
-                COSTAR_joinDF = pd.concat([COSTAR_joinDF,COSTAR_join])
-            if 'MHP_parc_blk_union2000' in layers:
-                MHP_union00 = gpd.read_file(os.path.join(path, fips+'.gpkg'),layer='MHP_parc_blk_union2000')
-                MHP_unionDF00 = pd.concat([MHP_unionDF00,MHP_union00])
-            if 'MHP_parc_blk_union2010' in layers:
-                MHP_union10 = gpd.read_file(os.path.join(path, fips+'.gpkg'),layer='MHP_parc_blk_union2010')
-                MHP_unionDF10 = pd.concat([MHP_unionDF10,MHP_union10])                
-            if 'MHP_parcels' in layers:
-                MHP_join = gpd.read_file(os.path.join(path, fips+'.gpkg'),layer='MHP')
-                MHP_joinDF = pd.concat([MHP_joinDF,MHP_join])
-                    
-    COSTAR_unionDF00.to_file(os.path.join(outDir,'Colorado_Final.gpkg'),layer='Colorado_Final_union2000')
-    COSTAR_unionDF10.to_file(os.path.join(outDir,'Colorado_Final.gpkg'),layer='Colorado_Final_union2010')
+        fips = path.split('\\')[-1]
+        countyEx = pd.read_csv(os.path.join(path,'exceptions.csv'), dtype={'COUNTY_FIPS':str})
+        exceptionsFinalDF = pd.concat([exceptionsFinalDF,countyEx])
+    exceptionsFinalDF.to_csv(os.path.join(outDir, f'{state}_exceptions.csv'))
 
-    MHP_unionDF00.to_file(os.path.join(outDir,'Colorado_Final.gpkg'),layer='Colorado_Final_union2000')
-    MHP_unionDF10.to_file(os.path.join(outDir,'Colorado_Final.gpkg'),layer='Colorado_Final_union2010')
+    # combine outputs into final state geodataframe    
+    for key, values in versions.items():
+        for v in values:
+            outDF = pd.DataFrame()
+            for path in parcelsPaths:
+                fips = path.split('\\')[-1]        
+                if os.path.exists(os.path.join(path,fips+'.gpkg')):
+                    layers = pyogrio.list_layers(os.path.join(path,fips+'.gpkg'))
+                    if f'{key}{v}' in layers:
+                        outDF = pd.concat([outDF,gpd.read_file(os.path.join(path, fips+'.gpkg'),layer=f'{key}{v}')])
+            outDF.to_file(os.path.join(outDir,f'{state}_Final.gpkg'),layer=f'{key}{v}')
 
 
-    #joinDF['polyLen_3'] = joinDF.apply(lambda row: geomLen(row.geometry), axis=1)
-    #joinDF['geomZscore_3'] = np.abs(stats.zscore(joinDF['polyLen2']))
-    COSTAR_joinDF.to_file(os.path.join(outDir, 'Colorado_Final.gpkg'),layer='Colorado_Final_COSTAR_parcels')
-    COSTAR_joinDF.to_csv(os.path.join(outDir, 'Colorado_Final_COSTAR.csv'))
-    
-    MHP_joinDF.to_file(os.path.join(outDir, 'Colorado_Final.gpkg'),layer='Colorado_Final_MH_parcels')
-    MHP_joinDF.to_csv(os.path.join(outDir, 'Colorado_Final_MHP.csv'))   
+
+    #COSTAR_joinDF.to_csv(os.path.join(outDir, 'Colorado_Final_COSTAR.csv'))
+    #MHP_joinDF.to_csv(os.path.join(outDir, 'Colorado_Final_MHP.csv'))   
 
     winsound.Beep(450, 1000)  
     print('Done.')
