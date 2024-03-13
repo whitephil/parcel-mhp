@@ -207,4 +207,16 @@ of the time, worse than my algorithm.
 Next steps:
 -start prepping for scale up... 
 -Meet w/ Andy
--
+-document various functions... reorganize?
+-inventory 2024 parcel data
+-how to move, where to put it
+-download buildings and blocks data or just grab them?
+
+3/11/24
+- work on doc strings
+
+
+3/13/24
+-Been testing on alpine
+-with a few mods (switch path.split('\\')[-1] to '/'),
+-everything worked on Adams county!

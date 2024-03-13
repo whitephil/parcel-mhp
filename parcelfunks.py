@@ -15,7 +15,16 @@ warnings.filterwarnings('ignore')
 # Filtering out outlier parcels:
 def interiorLen(geom):
     '''
-    sum of interior points in a polygon
+    Sum of interior points in a polygon.
+    Used downstream to filter out outlier geometries.
+
+    Parameters
+    ----------
+    geom: a shapely polygon/multipolygon object from a geopandas geometry column. 
+
+    Returns
+    ----------
+    Total number of interior points in the polygon object.
     '''
     if geom.geom_type == 'Polygon':
         return sum([len(g.xy[0]) for g in geom.interiors]) if len(geom.interiors) > 0 else 0
@@ -25,7 +34,16 @@ def interiorLen(geom):
 
 def exteriorLen(geom):
     '''
-    sum of exterior points in a polygon
+    Sum of exterior points in a polygon. 
+    Used downstream to filter out outlier geometries.
+
+    Parameters
+    ----------
+    geom: a shapely polygon/multipolygon object from a geopandas geometry column. 
+
+    Returns
+    ----------
+    Total number of exterior points in the polygon object.
     '''
     if geom.geom_type == 'Polygon':
         return len(geom.exterior.xy[0])
@@ -63,14 +81,29 @@ def unitFilter(phomes):
 
 # Buildings
 def sumWithin(parcels,buildings):
-    #bespoke, only works with this data... but could be modified to be more flexible
-    # parcels should be parcels, buildings shoudl be buildings
+    '''
+    Sums the building footprints and aggregates the mean area of 
+    buildings that intersect with a polygon. First uses geopandas.sjoin,
+    to associate individual parcel with intersected buildings, then
+    aggregates using pandas pivot_table and merges aggregate data to 
+    the original parcel input. Bespoke, only works with this data... 
+    but could be modified to be more flexible
+
+    Parameters
+    ----------
+    parcels: geodataframe of parcel data
+    bulidings: geodataframe of building footprint data
+
+    Returns
+    ----------
+    parcel polygons with aggregate building data.
+
+    '''
     parcels['ID'] = parcels.index
     cols = parcels.columns.to_list()
     cols = [cols[-1]] + cols[:-1]
     parcels = parcels[cols]
     buildings['areas'] = buildings['geometry'].area
-    #print(buildings.columns)
     dfsjoin = gpd.sjoin(parcels,buildings,predicate='intersects')
     #dfpivot = pd.pivot_table(dfsjoin,index=['ID','APN'], aggfunc={'FINDEX':len,'areas':'mean'}).reset_index()
     dfpivot = pd.pivot_table(dfsjoin,index=['ID','APN'], aggfunc={'FID':len,'areas':'mean'}).reset_index()
@@ -89,6 +122,18 @@ def sumWithin(parcels,buildings):
 
 
 def mhomes_prepper(mhomesPath):
+    """
+    Drops unwanted columns and renames columns in DHS mobile home dataset 
+    for disambiguation purposes downstream.
+
+    Parameters
+    ----------
+    mhomesPath: path to geodatabase containing the mobile home point data.
+
+    Returns
+    ----------
+    Prepped mobile home point geodataframe.
+    """
     mhomes = gpd.read_file(mhomesPath)
     mhomes.sindex
     columns = ['MHPID', 'NAME','ADDRESS', 'CITY', 'STATE', 'ZIP', 'STATUS', 'COUNTYFIPS', 'UNITS', 'SIZE', 'LATITUDE', 'LONGITUDE','geometry']
@@ -101,17 +146,32 @@ def mhomes_prepper(mhomesPath):
 
 
 def costar_prepper(costarPath):
-   mhomes = gpd.read_file(costarPath, layer='COSTAR_mhps')
-   mhomes.sindex
-   columns = ['property_id', 'propertyname', 'propertycity','propertystate', 'propertycounty', 'propertyzipcode', 'latitude', 'longitude', 'parcelnumber1min','numberofunits', 'geometry']
-   renames = ['MH_prop_id', 'MH_prop_name', 'MH_prop_city', 'MH_prop_state', 'MH_prop_county', 'MH_prop_zip', 'MH_lat', 'MH_long', 'MH_APN', 'MH_units']
-   drops = [c for c in mhomes.columns if c not in columns] 
-   renames = dict(zip(columns,renames))
-   mhomes.drop(drops,axis=1, inplace=True)
-   mhomes.rename(renames, axis='columns',inplace=True)
-   return mhomes
+    """
+    Same as mhomes_prepper but with COSTAR data. Drops unwanted 
+    columns and renames columns in COSTAR mobile home dataset 
+    for disambiguation purposes downstream.
+
+    Parameters
+    ----------
+    costarPath: path to geodatabase containing the COSTAR mobile home point data.
+
+    Returns
+    ----------
+    Prepped COSTAR mobile home point geodataframe.
+    """
+    mhomes = gpd.read_file(costarPath, layer='COSTAR_mhps')
+    mhomes.sindex
+    columns = ['property_id', 'propertyname', 'propertycity','propertystate', 'propertycounty', 'propertyzipcode', 'latitude', 'longitude', 'parcelnumber1min','numberofunits', 'geometry']
+    renames = ['MH_prop_id', 'MH_prop_name', 'MH_prop_city', 'MH_prop_state', 'MH_prop_county', 'MH_prop_zip', 'MH_lat', 'MH_long', 'MH_APN', 'MH_units']
+    drops = [c for c in mhomes.columns if c not in columns] 
+    renames = dict(zip(columns,renames))
+    mhomes.drop(drops,axis=1, inplace=True)
+    mhomes.rename(renames, axis='columns',inplace=True)
+    return mhomes
 
 def parcelBuildings(parcel,buildings):
+
+    # need to think about sequencing
     parcel.drop_duplicates(subset=['geometry'], inplace=True)
     parcel = sumWithin(parcel,buildings)
     parcel['geometry'] = parcel['geometry'].simplify(1.0)
@@ -139,6 +199,21 @@ def parcelPreFilter(parcel):
 
 
 def apnJoin(parcel, mobileHomes):
+    """
+    Performs a pandas table merge based on common APN values. Standardizes
+    APNs, merges, then creates boolean column for reach row indicating
+    if join took place or not. Keeps unjoined parcels.
+
+    Parameters
+    ----------
+    parcel: geodataframe of filtered parcel data
+    mobileHomes: geodataframe of prepped COSTAR mobile home data set
+    
+    Returns
+    ----------
+    Geodataframe of parcels with merged mobile home data. 
+
+    """
     parcel['APN'] = parcel['APN'].str.replace('-','')
     mobileHomes['MH_APN'] = mobileHomes['MH_APN'].str.replace('-','')
     apnParcel = pd.merge(parcel,mobileHomes, left_on='APN', right_on='MH_APN').drop(columns={'geometry_y'})
@@ -152,6 +227,22 @@ def apnJoin(parcel, mobileHomes):
     return apnParcel
 
 def nearSelect(parcel, mobileHomes):
+    """
+    Performs two near-predicated spatial joins. First sjoin intends to
+    get the closest available parcel, second gets other nearby potential
+    mobile home parcels. There was a definite reason for this two-step
+    process. Skips parcels joined via APN.
+    
+    Parameters
+    ----------
+    parcel: geodataframe of prepped and filtered parcel data
+    mobileHomes: geodataframe of prepped mobile home data set
+
+    Returns
+    ----------
+    Geodataframe with mobile home attributes joined.
+
+    """
     cols = parcel.columns
     if 'tempID' in cols:
         cols = cols.drop('tempID')
@@ -163,12 +254,11 @@ def nearSelect(parcel, mobileHomes):
     merged = merged.sort_values(['tempID','distances']).drop_duplicates(subset=['tempID'], keep='first')
     parcel['IDcheck'] = parcel['tempID'].isin(merged['tempID'].to_list())
     unmatched = parcel.loc[parcel['IDcheck']==False]
-    secondJoin = gpd.sjoin_nearest(unmatched, mobileHomes, max_distance=50.0, distance_col='distances')
+    secondJoin = gpd.sjoin_nearest(unmatched, mobileHomes, max_distance=100.0, distance_col='distances')
     secondJoin.drop('index_right',axis=1,inplace=True)
     concatted = pd.concat([merged,secondJoin])
     concatted.drop(['tempID','IDcheck'], axis=1, inplace=True)
     concatted['APN_JOIN'] = False
-    #print(len(concatted))
     cols = list(concatted.columns)
     cols.remove('geometry')
     cols.remove('distances')
@@ -177,6 +267,21 @@ def nearSelect(parcel, mobileHomes):
     return concatted
 
 def parcelCostarJoin(parcel,costarHomes):
+    """
+    Worker function. Runs parcel-mhp join processes in sequence 
+    over COSTAR version followed by unit filter.
+
+    Parameters
+    ----------
+    parcel: geodataframe; prepped and filtered, and parcel data post-APN join attempt
+    mobileHomes: geodataframe; prepped COSTAR mobile home data set
+
+    Returns
+    ----------
+    Geodataframe phomes of parcel data with mobile home attributes, 
+    with excess parcel-mhp polygons filtered out. 
+    """
+
     apnParcel = apnJoin(parcel,costarHomes)
     phomes = nearSelect(parcel,costarHomes)
     phomes = pd.concat([apnParcel,phomes])
@@ -192,6 +297,21 @@ def parcelCostarJoin(parcel,costarHomes):
     return phomes
 
 def parcelMHPJoin(parcel,mobileHomes):
+    """
+    Worker function. Runs parcel-mhp join processes in sequence 
+    over DHS mobile home data followed by unit filter. Same as
+    costarMHPJoin minus APN join process.
+
+    Parameters
+    ----------
+    parcel: geodataframe; prepped and filtered, and parcel data 
+    mobileHomes: geodataframe; prepped DHS mobile home data set
+
+    Returns
+    ----------
+    Geodataframe phomes of parcel data with mobile home attributes, 
+    with excess parcel-mhp polygons filtered out. 
+    """
     phomes = nearSelect(parcel,mobileHomes)
     phomes.sort_values(by=['APN'])
     phomes.reset_index(inplace=True)
@@ -199,6 +319,18 @@ def parcelMHPJoin(parcel,mobileHomes):
     return phomes
 
 def duplicateCheck(fips,phomes, writer):
+    """
+    Checks for duplicate parcels in the output. This looks for 
+    a duplicate that occurs when two mobile home points intersect 
+    the same parcel. These are not deduplicated, but noted in
+    exceptions csv. 
+    
+    Parameters
+    ----------
+    fips: str; fips code of current county
+    phomes: geodataframe of parcel-mobile homes data post join processes
+    writer: csv writer object from parcelWorker function
+    """
     if len(phomes) > len(phomes['APN'].unique()):
         phomes['duplicated'] = phomes.duplicated(subset='APN', keep=False)
         dups = phomes.loc[phomes['duplicated'] == True]
@@ -210,12 +342,30 @@ def duplicateCheck(fips,phomes, writer):
                 elif 'MHPID' in dups.columns:
                     values = dups.iloc[i][['APN','MHPID']].values
                     writer.writerow([fips,'DUPLICATE',f'APN:{values[0]}',f'MHPID:{values[1]}'])
-# FIX WRITER HERE
 
-def parcelWorker(pFilePath):    
-    fips = pFilePath.split('\\')[-1]
+
+def parcelWorker(pFilePath):
+    """
+    Step 1. Worker function executed in main script. Reads in parcel, 
+    buildings, mhp datasets, runs all preprocesses and filters,
+    runs join process, differentiates between COSTAR and DHS mobile
+    home data. After running COSTAR version, runs all remaining
+    potential mhp parcels through join process on DHS data. Notes
+    missing, non-joined, and potential problem counties to 
+    exceptions.csv; writes parcel-mhp matched polygons to geopackage.
+
+    Parameters
+    ----------
+    pFilePath: str; file path to directory containing county level parcel data, 
+               mobile home data, buildings data.
+    
+    """    
+    fips = pFilePath.split('\\')[-1] #on linux should be '/'
+    print(fips)
     costarPath = os.path.join(pFilePath,fips+'_COSTAR_mhps.gpkg')
     mhpPath = os.path.join(pFilePath,fips+'_mhps_OG.gpkg')
+    print(costarPath)
+    print(mhpPath)
     with open(os.path.join(pFilePath,'exceptions.csv'),'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow(['COUNTY_FIPS','PROBLEM','NOTE_1','NOTE_2'])
@@ -229,7 +379,6 @@ def parcelWorker(pFilePath):
             parcel = parcelBuildings(parcel,buildings)  
             parcel = parcelPreFilter(parcel)
             parcel['UNIQID'] = np.random.randint(low=1, high=1000000000, size=len(parcel))
-            print(parcel['APN'])
             #run on COSTAR mhp data:
             if os.path.exists(costarPath):
                 costarHomes = gpd.read_file(costarPath, layer='COSTAR_mhps')
@@ -266,6 +415,23 @@ def parcelWorker(pFilePath):
 
 
 def union_intersect(pFilePath, fips, blocks, phomes, year, mhpVersion):
+    """
+    Runs through union overlay operation over parcel-mobile homes data
+    and census block polygon data. Calculates proportion of unioned 
+    mobile home parcels that overlap with a census block. Notes misses
+    in exceptions csv. Writes union outputs to geopackage. Executed within
+    unionWorker function.
+
+    Parameters
+    ----------
+    pFilePath:  str; path to directory containing county level mhp-parcels gpkg
+                and census blocks geopackage (used for writing output)
+    fips:       str; fips code of the current county
+    blocks:     geodataframe containing census block data
+    phomes:     geodataframe mobile home park parcels output from merge/join process 
+    year:       str; year of census block data (2000 or 2010)
+    mhpVersion: str; version of mobile home park parcel data, either COSTAR of MHP
+    """
     with open(os.path.join(pFilePath,'exceptions.csv'),'a', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         #blocks.to_crs(crs='ESRI:102003', inplace=True)
@@ -287,6 +453,17 @@ def union_intersect(pFilePath, fips, blocks, phomes, year, mhpVersion):
                 writer.writerow([fips, 'MHP join worked-but union missed-investigate'])
 
 def unionWorker(pFilePath):
+    """
+    Step 2. Worker function executed in main script following mergeWorker. 
+    Reads county census blocks, newly created mobile home parcel data, and 
+    differentiates and manages 2000 vs 2010 blocks and COSTAR vs DHS mhp-parcels.
+
+    Parameters
+    ----------
+    pFilePath: str; path to file directory of county level mobile home park parcels
+               and census blocks data.
+
+    """
     fips = pFilePath.split('\\')[-1]
     if os.path.exists(os.path.join(pFilePath,fips+'.gpkg')) == True:
         parcelLayers = pyogrio.list_layers(os.path.join(pFilePath,fips+'.gpkg'))            
@@ -307,7 +484,22 @@ def unionWorker(pFilePath):
 
 # need to check if all output columns are carried through
 
-def mhp_union_merge(fips,version,pFilePath,versionName):    
+def mhp_union_merge(fips,version,pFilePath,versionName):
+    """
+    Merges all unioned mhp parcels/blocks data versions back with
+    original version of mobile home data. Manages year and mobile
+    home park version (COSTAR or MHP). Keeps unjoined mobile home
+    parks in original dataset. After table merge, some column
+    clean up. Writes outputs to csv.
+
+    Parameters
+    ----------
+    fips: str, fips code of current county
+    version: str, either 'COSTAR' of 'MHP'
+    pFilePath: str, path to county data
+    versionName: str, costar or mhp plus fips (from mergeWorker)  
+
+    """    
     years = ['00','10']
     for year in years:
         if version == 'COSTAR':
@@ -338,6 +530,15 @@ def mhp_union_merge(fips,version,pFilePath,versionName):
 
 
 def mergeWorker(pFilePath):
+    """
+    Step 3. Worker function executed in main script. Detects 
+    version (COSTAR of MHP), manages file naming inputs. 
+    Executes mhp_union_merge function.
+
+    Parameters
+    ----------
+    pFilePath: file path to all county-level data layers
+    """
     fips = pFilePath.split('\\')[-1]
     costarName = f'COSTAR_{fips}.csv'
     mhpName = f'MHP_{fips}.csv'
