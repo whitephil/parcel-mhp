@@ -372,17 +372,17 @@ def parcelWorker(pFilePath):
         if os.path.exists(costarPath) or os.path.exists(mhpPath):
             parcel = gpd.read_file(os.path.join(pFilePath,'parcels.shp'))
             print(fips)
-            parcel.to_crs(crs='ESRI:102003', inplace=True)
+            parcel.to_crs(crs='ESRI:102005', inplace=True)
             #buildings = gpd.read_file(os.path.join(pFilePath,fips+'_Buildings.gpkg'),layer=fips+'_Buildings')
             buildings = gpd.read_file(os.path.join(pFilePath,fips+'_buildings.shp'))
-            buildings.to_crs(crs='ESRI:102003', inplace=True)
+            buildings.to_crs(crs='ESRI:102005', inplace=True)
             parcel = parcelBuildings(parcel,buildings)  
             parcel = parcelPreFilter(parcel)
             parcel['UNIQID'] = np.random.randint(low=1, high=1000000000, size=len(parcel))
             #run on COSTAR mhp data:
             if os.path.exists(costarPath):
                 costarHomes = gpd.read_file(costarPath, layer='COSTAR_mhps')
-                costarHomes.to_crs(crs='ESRI:102003', inplace=True)
+                costarHomes.to_crs(crs='ESRI:102005', inplace=True)
                 costarParcels = parcelCostarJoin(parcel,costarHomes)
                 duplicateCheck(fips,costarParcels, writer)
                 costarParcels['COSTAR'] = 1
@@ -400,7 +400,7 @@ def parcelWorker(pFilePath):
             if len(parcel) > 0:
                 if os.path.exists(mhpPath):
                     mobileHomes = gpd.read_file(mhpPath, layer=f'{fips}_MHPS_OG_prepped')
-                    mobileHomes.to_crs(crs='ESRI:102003', inplace=True)
+                    mobileHomes.to_crs(crs='ESRI:102005', inplace=True)
                     mhpParcels = parcelMHPJoin(parcel,mobileHomes)
                     duplicateCheck(fips,mhpParcels,writer)
                     if len(mhpParcels) > 0:
@@ -434,7 +434,7 @@ def union_intersect(pFilePath, fips, blocks, phomes, year, mhpVersion):
     """
     with open(os.path.join(pFilePath,'exceptions.csv'),'a', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        #blocks.to_crs(crs='ESRI:102003', inplace=True)
+        #blocks.to_crs(crs='ESRI:102005', inplace=True)
         blocks['blockArea_m'] = blocks['geometry'].area
         union = blocks.overlay(phomes, how='intersection')
         union['unionArea_m'] = union['geometry'].area
