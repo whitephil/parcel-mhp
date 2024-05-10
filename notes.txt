@@ -220,3 +220,21 @@ Next steps:
 -Been testing on alpine
 -with a few mods (switch path.split('\\')[-1] to '/'),
 -everything worked on Adams county!
+
+3/26/24
+-quick test to see how it worked on multiple (2) counties, works fine.
+
+3/27/24
+-started work on getting buildings to scratch space.
+-need to generate cfips & sfips lists from parcel inventory, but 2024 data is at work.
+
+5/10/24
+-switched all package management to mamba and blew up conda last month
+-buildings_getter.py works with buildings.sh
+-something is going with bash terminal in vscode, looking in the wrong place for proj
+-has to do w/ conda... which I destroyed
+-when running in bash, things mess up, 
+-scripts work in powershell though, so scripts are good, env variables messed up?
+
+to do:
+-plan/get buildings, parcels, and censu tracts onto alpine scratch

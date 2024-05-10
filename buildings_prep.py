@@ -7,10 +7,11 @@ import requests
 import os
 import warnings
 
+gpd.options.io_engine = "pyogrio"
 
 warnings.filterwarnings("ignore")
 dataDir = r'C:\Users\phwh9568\Data\ParcelAtlas'
-countiesPath = r'E:/tl_2022_us_county.gpkg'
+countiesPath = os.path.join(dataDir,'tl_2022_us_county.gpkg')
 outDir = r'E:/'
 url = 'https://usbuildingdata.blob.core.windows.net/usbuildings-v2/'
 
