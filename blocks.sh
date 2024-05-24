@@ -1,0 +1,1 @@
+python blocks_retriever.py 08013
