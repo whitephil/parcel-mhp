@@ -1,13 +1,14 @@
-from glob import glob
 from zipfile import ZipFile
 import os
+import sys
 
-parcel_dir = r'/scratch/alpine/phwh9568/ParcelAtlas2023'
+fips = sys.argv[1].strip()
+parcel_dir = r'/scratch/alpine/phwh9568/parcelAtlas2023/ParcelAtlas2023'
+scratch = r'/scratch/alpine/phwh9568'
 
-zips = glob(parcel_dir+'/*.zip')
+z = os.path.join(parcel_dir,fips+'.zip')
 
-for z in zips:
-    with ZipFile(z,'r') as zipped:
-        stateDir = 'State_' + z.split('/')[-1][0:2]
-        countyDir = z.split("/")[-1].split('.')[0]
-        zipped.extractall(os.path.join(stateDir,countyDir))
+with ZipFile(z,'r') as zipped:
+    stateDir = os.path.join(scratch,'State_' + z.split('/')[-1][0:2])
+    countyDir = z.split("/")[-1].split('.')[0]
+    zipped.extractall(os.path.join(stateDir,countyDir))
