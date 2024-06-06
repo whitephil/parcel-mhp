@@ -238,3 +238,13 @@ Next steps:
 
 to do:
 -plan/get buildings, parcels, and censu tracts onto alpine scratch
+
+6/6/24
+-parcel, blocks, buildings data all loaded onto scratch/alpine
+-need to get HIFLD mhp data, prep, upload, and split/
+-need COSTAR mhp data, prep, upload, and split using parcel inventory list
+-run small tests on parcelPipe to make sure I didn't mess up naming conventions
+ with renaming of MHP_OG to HIFLD.
+-run data inventory to make sure everything is there.
+-upload parcelPipe.py to projects/phwh9568/mh_v1
+-getting close.

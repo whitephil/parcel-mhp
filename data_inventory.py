@@ -13,7 +13,7 @@ stateFips = inventory['STATEFP'].unique()
 
 with open(os.path.join(data_dir,'data_inventory.csv'),'w', newline='', encoding='utf-8') as f:
     writer = csv.writer(f)
-    writer.writerow(['SFIPS','state','FIPS','parcels','blocks10','blocks00','buildings'])
+    writer.writerow(['SFIPS','state','FIPS','parcels','blocks10','blocks00','buildings', 'COSTAR', 'HIFLD'])
     for sfips in stateFips:
         state_dir = os.path.join(data_dir,f'State_{sfips}')
         if os.path.exists(state_dir):
@@ -25,7 +25,7 @@ with open(os.path.join(data_dir,'data_inventory.csv'),'w', newline='', encoding=
         
         for fips in cfips:
         
-            if os.path.exists(os.path.join(state_dir,fips,'parcels.shp')):
+            if os.path.exists(os.path.join(state_dir,fips,'Parcels.shp')):
                 parcels = True
             else:
                 parcels = False
@@ -49,4 +49,14 @@ with open(os.path.join(data_dir,'data_inventory.csv'),'w', newline='', encoding=
             else:
                 buildings = False
 
-            writer.writerow([sfips,state,fips,parcels,blocks10,blocks00,buildings])
+            if os.path.exists(os.path.join(state_dir,fips,f'{fips}_COSTAR_mhps.gpkg')):
+                costar = True
+            else:
+                costar = False          
+
+            if os.path.exists(os.path.join(state_dir,fips,f'{fips}_mhps.gpkg')):
+                hifld = True
+            else:
+                hifld = False    
+
+            writer.writerow([sfips,state,fips,parcels,blocks10,blocks00,buildings,costar,hifld])
