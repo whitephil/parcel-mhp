@@ -15,7 +15,7 @@ warnings.filterwarnings('ignore')
 
 def mhomes_prepper(mhomesPath):
     """
-    Drops unwanted columns and renames columns in DHS mobile home dataset 
+    Drops unwanted columns and renames columns in HIFLD mobile home dataset 
     for disambiguation purposes downstream.
 
     Parameters
@@ -37,20 +37,21 @@ def mhomes_prepper(mhomesPath):
     return mhomes
 
 
-def costar_prepper(costarPath):
+def costar_prepper(costarPath, fipsPath):
     """
     Same as mhomes_prepper but with COSTAR data. Drops unwanted 
     columns and renames columns in COSTAR mobile home dataset 
-    for disambiguation purposes downstream.
+    for disambiguation purposes downstream. Adds county fips codes.
 
     Parameters
     ----------
     costarPath: path to geodatabase containing the COSTAR mobile home point data.
-
+    fipsPath: path to csv containing fips codes for all US counties
     Returns
     ----------
     Prepped COSTAR mobile home point geodataframe.
     """
+    fipsCodes = pd.read_csv(fipsPath, dtype={'fips':str}, encoding='iso-8859-1')
     mhomes = gpd.read_file(costarPath, layer='COSTAR_mhps')
     mhomes.sindex
     columns = ['property_id', 'propertyname', 'propertycity','propertystate', 'propertycounty', 'propertyzipcode', 'latitude', 'longitude', 'parcelnumber1min','numberofunits', 'geometry']
@@ -59,7 +60,30 @@ def costar_prepper(costarPath):
     renames = dict(zip(columns,renames))
     mhomes.drop(drops,axis=1, inplace=True)
     mhomes.rename(renames, axis='columns',inplace=True)
+    fipsCodes['MH_prop_county'] = fipsCodes['name'].str.replace(' County','')
+    mhomes = pd.merge(mhomes,fipsCodes[['MH_prop_county','fips']], on='MH_prop_county')
+    mhomes.rename({'fips':'MH_COUNTY_FIPS'}, axis='columns', inplace=True)
     return mhomes
+
+def mhp_splitter(fips, MHPpath):
+    """
+    fips: fips code of the county being extracted
+    MHPpath: path to gpkg of mhp data, costar or hifld
+    
+    """
+    if 'COSTAR' in MHPpath:
+        version = 'COSTAR'
+    else:
+        version = 'HIFLD'
+    
+    state = fips[0:2]
+    countyPath = f'/scratch/alpine/phwh9568/State_{state}/{fips}'
+
+    mhps = gpd.read_file(MHPpath, dtype={'MH_COUNTY_FIPS':str})
+    mhps = mhps.loc[mhps['MH_COUNTY_FIPS']==fips]
+    mhps.to_file(os.path.join(countyPath,f'{fips}_{version}_mhps.gpkg'), driver='GPKG', layer=f'{version}_mhps')
+
+
 
 # Parcel prefiltering functions
 
@@ -296,13 +320,13 @@ def parcelCostarJoin(parcel,costarHomes):
 def parcelMHPJoin(parcel,mobileHomes):
     """
     Worker function. Runs parcel-mhp join processes in sequence 
-    over DHS mobile home data followed by unit filter. Same as
+    over HIFLD mobile home data followed by unit filter. Same as
     costarMHPJoin minus APN join process.
 
     Parameters
     ----------
     parcel: geodataframe; prepped and filtered, and parcel data 
-    mobileHomes: geodataframe; prepped DHS mobile home data set
+    mobileHomes: geodataframe; prepped HIFLD mobile home data set
 
     Returns
     ----------
@@ -433,28 +457,28 @@ def union_intersect(pFilePath, fips, blocks, phomes, year, mhpVersion):
                 union.to_csv(os.path.join(pFilePath,f'COSTAR_union_csv20{year}.csv'))
             else:
                 writer.writerow([fips, 'COSTAR join worked-but union missed-investigate'])
-        if mhpVersion == 'MHPS':
+        if mhpVersion == 'HIFLD':
             if len(union) > 0:
-                union.to_file(os.path.join(pFilePath,fips+'.gpkg'),driver='GPKG', layer=f'MHP_parc_blk_union20{year}')
-                union.to_csv(os.path.join(pFilePath,f'MHP_union_csv20{year}.csv'))
+                union.to_file(os.path.join(pFilePath,fips+'.gpkg'),driver='GPKG', layer=f'HIFLD_parc_blk_union20{year}')
+                union.to_csv(os.path.join(pFilePath,f'HIFLD_union_csv20{year}.csv'))
             else:
-                writer.writerow([fips, 'MHP join worked-but union missed-investigate'])
+                writer.writerow([fips, 'HIFLD join worked-but union missed-investigate'])
 
 
 def mhp_union_merge(fips,version,pFilePath,versionName):
     """
     Merges all unioned mhp parcels/blocks data versions back with
     original version of mobile home data. Manages year and mobile
-    home park version (COSTAR or MHP). Keeps unjoined mobile home
+    home park version (COSTAR or HIFLD). Keeps unjoined mobile home
     parks in original dataset. After table merge, some column
     clean up. Writes outputs to csv.
 
     Parameters
     ----------
     fips:        str, fips code of current county
-    version:     str, either 'COSTAR' of 'MHP'
+    version:     str, either 'COSTAR' of 'HIFLD'
     pFilePath:   str, path to county data
-    versionName: str, costar or mhp plus fips (from mergeWorker)  
+    versionName: str, costar or HIFLD plus fips (from mergeWorker)  
 
     """    
     years = ['00','10']
@@ -463,7 +487,7 @@ def mhp_union_merge(fips,version,pFilePath,versionName):
             mhp = pd.read_csv(os.path.join(pFilePath,versionName), dtype={'MH_COUNTY_FIPS':str, 'MH_APN':str})
             mhp['MH_APN'] = mhp['MH_APN'].str.replace('-','')
             dtype = {f'GEOID{year}':str,f'STATEFP{year}':str, f'COUNTYFP{year}':str, f'TRACTCE{year}':str,f'BLOCKCE{year}':str, 'MH_APN':str, 'APN':str, 'APN2':str}
-        if version == 'MHP':
+        if version == 'HIFLD':
             mhp = pd.read_csv(os.path.join(pFilePath,versionName), dtype={'COUNTYFIPS':str, 'MHPID':str})
             dtype = {f'GEOID{year}':str,f'STATEFP{year}':str, f'COUNTYFP{year}':str, f'TRACTCE{year}':str,f'BLOCKCE{year}':str, 'MHPID':str}
         unionPath = os.path.join(pFilePath,f'{version}_union_csv20{year}.csv')
@@ -471,7 +495,7 @@ def mhp_union_merge(fips,version,pFilePath,versionName):
             union = pd.read_csv(unionPath, dtype=dtype)
             if version == 'COSTAR':
                 mhp_union = mhp.merge(union, on='MH_prop_id', how = 'outer')
-            if version == 'MHP':
+            if version == 'HIFLD':
                 mhp_union = mhp.merge(union, on='MHPID', how = 'outer')
             #mhp_union_merge.drop(['Unnamed: 0_x', 'Unnamed: 0_y'], axis=1, inplace=True)
             mhp_union.drop(mhp_union.filter(regex='_y$').columns, axis=1, inplace=True)
@@ -491,9 +515,9 @@ def parcelWorker(pFilePath):
     """
     Step 1. Worker function executed in main script. Reads in parcel, 
     buildings, mhp datasets, runs all preprocesses and filters,
-    runs join process, differentiates between COSTAR and DHS mobile
+    runs join process, differentiates between COSTAR and HIFLD mobile
     home data. After running COSTAR version, runs all remaining
-    potential mhp parcels through join process on DHS data. Notes
+    potential mhp parcels through join process on HIFLD data. Notes
     missing, non-joined, and potential problem counties to 
     exceptions.csv; writes parcel-mhp matched polygons to geopackage.
 
@@ -506,13 +530,13 @@ def parcelWorker(pFilePath):
     fips = pFilePath.split('\\')[-1] #on linux should be '/'
     print(fips)
     costarPath = os.path.join(pFilePath,fips+'_COSTAR_mhps.gpkg')
-    mhpPath = os.path.join(pFilePath,fips+'_mhps_OG.gpkg')
+    hifldPath = os.path.join(pFilePath,fips+'_HIFLD_mhps.gpkg')
     print(costarPath)
-    print(mhpPath)
+    print(hifldPath)
     with open(os.path.join(pFilePath,'exceptions.csv'),'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow(['COUNTY_FIPS','PROBLEM','NOTE_1','NOTE_2'])
-        if os.path.exists(costarPath) or os.path.exists(mhpPath):
+        if os.path.exists(costarPath) or os.path.exists(hifldPath):
             parcel = gpd.read_file(os.path.join(pFilePath,'parcels.shp'))
             print(fips)
             parcel.to_crs(crs='ESRI:102005', inplace=True)
@@ -539,22 +563,22 @@ def parcelWorker(pFilePath):
                     writer.writerow([fips,'No COSTAR-Parcel Joins'])                
             else:
                 writer.writerow([fips,'NO COSTAR MHPs'])
-            #any remaining parcels try joining with DHS mhp dataset:
+            #any remaining parcels try joining with HIFLD mhp dataset:
             if len(parcel) > 0:
-                if os.path.exists(mhpPath):
-                    mobileHomes = gpd.read_file(mhpPath, layer=f'{fips}_MHPS_OG_prepped')
+                if os.path.exists(hifldPath):
+                    mobileHomes = gpd.read_file(hifldPath, layer='HIFLD_mhps')
                     mobileHomes.to_crs(crs='ESRI:102005', inplace=True)
                     mhpParcels = parcelMHPJoin(parcel,mobileHomes)
                     duplicateCheck(fips,mhpParcels,writer)
                     if len(mhpParcels) > 0:
-                        mhpParcels.to_file(os.path.join(pFilePath,fips+'.gpkg'),driver='GPKG', layer='MHP_parcels')
+                        mhpParcels.to_file(os.path.join(pFilePath,fips+'.gpkg'),driver='GPKG', layer='HIFLD_parcels')
                     else:
-                        writer.writerow([fips,'No MHP-Parcel Joins'])
+                        writer.writerow([fips,'No HIFLD-Parcel Joins'])
                 else:
-                    writer.writerow([fips,'NO MHPs'])
+                    writer.writerow([fips,'NO HFLD MHPs'])
             else: writer.writerow([fips,'No remaining parcels post-costar join'])
         else:
-            writer.writerow([fips,'NO COSTAR or MHPs'])
+            writer.writerow([fips,'NO COSTAR or HIFLDs'])
 
 
 
@@ -562,7 +586,7 @@ def unionWorker(pFilePath):
     """
     Step 2. Worker function executed in main script following mergeWorker. 
     Reads county census blocks, newly created mobile home parcel data, and 
-    differentiates and manages 2000 vs 2010 blocks and COSTAR vs DHS mhp-parcels.
+    differentiates and manages 2000 vs 2010 blocks and COSTAR vs HIFLD mhp-parcels.
 
     Parameters
     ----------
@@ -581,16 +605,16 @@ def unionWorker(pFilePath):
                 mhpVersion = 'COSTAR'
                 phomes = gpd.read_file(os.path.join(pFilePath,fips+'.gpkg'), layer='COSTAR_parcels')
                 union_intersect(pFilePath, fips, blocks, phomes, year, mhpVersion)    
-            if 'MHP_parcels' in parcelLayers:
-                mhpVersion = 'MHPS'
-                phomes = gpd.read_file(os.path.join(pFilePath,fips+'.gpkg'), layer='MHP_parcels')
+            if 'HIFLD_parcels' in parcelLayers:
+                mhpVersion = 'HIFLD'
+                phomes = gpd.read_file(os.path.join(pFilePath,fips+'.gpkg'), layer='HIFLD_parcels')
                 union_intersect(pFilePath, fips, blocks, phomes, year, mhpVersion) 
                 
 
 def mergeWorker(pFilePath):
     """
     Step 3. Worker function executed in main script. Detects 
-    version (COSTAR of MHP), manages file naming inputs. 
+    version (COSTAR or HIFLD), manages file naming inputs. 
     Executes mhp_union_merge function.
 
     Parameters
@@ -599,11 +623,11 @@ def mergeWorker(pFilePath):
     """
     fips = pFilePath.split('\\')[-1]
     costarName = f'COSTAR_{fips}.csv'
-    mhpName = f'MHP_{fips}.csv'
+    hifldName = f'HIFLD_{fips}.csv'
     if os.path.exists(os.path.join(pFilePath, costarName)):
         version = 'COSTAR'
         mhp_union_merge(fips,version,pFilePath,costarName)
 
-    if os.path.exists(os.path.join(pFilePath,mhpName)):
-        version = 'MHP'
-        mhp_union_merge(fips,version,pFilePath,mhpName)        
+    if os.path.exists(os.path.join(pFilePath,hifldName)):
+        version = 'HIFLD'
+        mhp_union_merge(fips,version,pFilePath,hifldName)        

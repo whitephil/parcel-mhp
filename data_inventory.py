@@ -54,7 +54,7 @@ with open(os.path.join(data_dir,'data_inventory.csv'),'w', newline='', encoding=
             else:
                 costar = False          
 
-            if os.path.exists(os.path.join(state_dir,fips,f'{fips}_mhps.gpkg')):
+            if os.path.exists(os.path.join(state_dir,fips,f'{fips}_HIFLD_mhps.gpkg')):
                 hifld = True
             else:
                 hifld = False    
