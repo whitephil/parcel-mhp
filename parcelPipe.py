@@ -37,7 +37,7 @@ def mhomes_prepper(mhomesPath):
     return mhomes
 
 
-def costar_prepper(costarPath, fipsPath):
+def costar_prepper(costarPath):
     """
     Same as mhomes_prepper but with COSTAR data. Drops unwanted 
     columns and renames columns in COSTAR mobile home dataset 
@@ -51,18 +51,18 @@ def costar_prepper(costarPath, fipsPath):
     ----------
     Prepped COSTAR mobile home point geodataframe.
     """
-    fipsCodes = pd.read_csv(fipsPath, dtype={'fips':str}, encoding='iso-8859-1')
+    #fipsCodes = pd.read_csv(fipsPath, dtype={'fips':str}, encoding='iso-8859-1')
     mhomes = gpd.read_file(costarPath, layer='COSTAR_mhps')
     mhomes.sindex
-    columns = ['property_id', 'propertyname', 'propertycity','propertystate', 'propertycounty', 'propertyzipcode', 'latitude', 'longitude', 'parcelnumber1min','numberofunits', 'geometry']
-    renames = ['MH_prop_id', 'MH_prop_name', 'MH_prop_city', 'MH_prop_state', 'MH_prop_county', 'MH_prop_zip', 'MH_lat', 'MH_long', 'MH_APN', 'MH_units']
+    columns = ['property_id', 'propertyname', 'property_address','propertycity','propertystate', 'propertycounty', 'fipscode','propertyzipcode', 'propertyzip5','latitude', 'longitude', 'costar_parcel','numberofunits', 'geometry']
+    renames = ['MH_prop_id', 'MH_prop_name', 'MH_prop_add','MH_prop_city', 'MH_prop_state', 'MH_prop_county', 'MH_COUNTY_FIPS','MH_prop_zip', 'MH_ZIP','MH_lat', 'MH_long', 'costar_parcel', 'MH_units']
     drops = [c for c in mhomes.columns if c not in columns] 
     renames = dict(zip(columns,renames))
     mhomes.drop(drops,axis=1, inplace=True)
     mhomes.rename(renames, axis='columns',inplace=True)
-    fipsCodes['MH_prop_county'] = fipsCodes['name'].str.replace(' County','')
-    mhomes = pd.merge(mhomes,fipsCodes[['MH_prop_county','fips']], on='MH_prop_county')
-    mhomes.rename({'fips':'MH_COUNTY_FIPS'}, axis='columns', inplace=True)
+    #fipsCodes['MH_prop_county'] = fipsCodes['name'].str.replace(' County','')
+    #mhomes = pd.merge(mhomes,fipsCodes[['MH_prop_county','fips']], on='MH_prop_county')
+    #mhomes.rename({'fips':'MH_COUNTY_FIPS'}, axis='columns', inplace=True)
     return mhomes
 
 def mhp_splitter(fips, MHPpath):
@@ -79,9 +79,10 @@ def mhp_splitter(fips, MHPpath):
     state = fips[0:2]
     countyPath = f'/scratch/alpine/phwh9568/State_{state}/{fips}'
 
-    mhps = gpd.read_file(MHPpath, dtype={'MH_COUNTY_FIPS':str})
+    mhps = gpd.read_file(MHPpath, dtype={'MH_COUNTY_FIPS':str, 'MH_ZIP':str})
     mhps = mhps.loc[mhps['MH_COUNTY_FIPS']==fips]
-    mhps.to_file(os.path.join(countyPath,f'{fips}_{version}_mhps.gpkg'), driver='GPKG', layer=f'{version}_mhps')
+    if len(mhps) > 0:
+        mhps.to_file(os.path.join(countyPath,f'{fips}_{version}_mhps.gpkg'), driver='GPKG', layer=f'{version}_mhps')
 
 
 
@@ -236,7 +237,7 @@ def apnJoin(parcel, mobileHomes):
 
     """
     parcel['APN'] = parcel['APN'].str.replace('-','')
-    mobileHomes['MH_APN'] = mobileHomes['MH_APN'].str.replace('-','')
+    mobileHomes['MH_APN'] = mobileHomes['costar_parcel'].str.replace('-','')
     apnParcel = pd.merge(parcel,mobileHomes, left_on='APN', right_on='MH_APN').drop(columns={'geometry_y'})
     apnParcel.rename({'geometry_x':'geometry'}, axis='columns', inplace=True)
     apnParcel['APN_JOIN'] = True
