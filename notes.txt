@@ -248,3 +248,10 @@ to do:
 -run data inventory to make sure everything is there.
 -upload parcelPipe.py to projects/phwh9568/mh_v1
 -getting close.
+
+6/13/24
+-working on script that will select the most complete county parcels layer
+-2022 zipped files are nested, but 2023 are not... 
+
+Also to do:
+-change crs for Hawaii and Alaska

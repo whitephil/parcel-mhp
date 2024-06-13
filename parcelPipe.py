@@ -153,11 +153,11 @@ def sumWithin(parcels,buildings):
     parcels = parcels[cols]
     buildings['areas'] = buildings['geometry'].area
     dfsjoin = gpd.sjoin(parcels,buildings,predicate='intersects')
-    #dfpivot = pd.pivot_table(dfsjoin,index=['ID','APN'], aggfunc={'FINDEX':len,'areas':'mean'}).reset_index()
-    dfpivot = pd.pivot_table(dfsjoin,index=['ID','APN'], aggfunc={'FID':len,'areas':'mean'}).reset_index()
+    dfpivot = pd.pivot_table(dfsjoin,index=['ID','APN'], aggfunc={'FINDEX':len,'areas':'mean'}).reset_index()
+    #dfpivot = pd.pivot_table(dfsjoin,index=['ID','APN'], aggfunc={'FID':len,'areas':'mean'}).reset_index()
     dfpolynew = parcels.merge(dfpivot, how='left', on='ID')
-    if 'FID' in dfpolynew: #remember to switch to 'FINDEX' when running in future
-        dfpolynew.rename({'APN_x':'APN', 'FID': 'Sum_Within', 'areas':'mnBlgArea'}, axis='columns',inplace=True)
+    if 'FINDEX' in dfpolynew: #remember to switch to 'FINDEX' when running in future
+        dfpolynew.rename({'APN_x':'APN', 'FINDEX': 'Sum_Within', 'areas':'mnBlgArea'}, axis='columns',inplace=True)
         dfpolynew.fillna({'Sum_Within':0}, inplace=True)
         dfpolynew.fillna({'mnBlgArea':0}, inplace=True)
         dfpolynew.drop(['ID','APN_y'], axis=1, inplace=True)
@@ -193,8 +193,7 @@ def parcelPreFilter(parcel,buildings):
     parcel = sumWithin(parcel,buildings)
     parcel['geometry'] = parcel['geometry'].simplify(1.0)
     parcel['intLen'] = parcel.apply(lambda row: interiorLen(row.geometry), axis=1)
-    parcel['intZscore'] = np.abs(stats.zscore(parcel['intLen']))
-    parcel.drop(parcel[parcel.intLen >= 20].index, inplace=True) #dropping outlier inner geometries
+    parcel['intZscore'] = np.abs(stats.zscore(parcel['intLen']))#dropping outlier inner geometries
     parcel.reset_index(inplace=True)
     parcel['extLen1'] = parcel.apply(lambda row: exteriorLen(row.geometry), axis=1)
     parcel['extZscore1'] = np.abs(stats.zscore(parcel['extLen1']))
@@ -529,6 +528,7 @@ def parcelWorker(pFilePath):
     
     """    
     fips = pFilePath.split('\\')[-1] #on linux should be '/'
+    print(pFilePath)
     print(fips)
     costarPath = os.path.join(pFilePath,fips+'_COSTAR_mhps.gpkg')
     hifldPath = os.path.join(pFilePath,fips+'_HIFLD_mhps.gpkg')
@@ -538,13 +538,13 @@ def parcelWorker(pFilePath):
         writer = csv.writer(f)
         writer.writerow(['COUNTY_FIPS','PROBLEM','NOTE_1','NOTE_2'])
         if os.path.exists(costarPath) or os.path.exists(hifldPath):
-            parcel = gpd.read_file(os.path.join(pFilePath,'parcels.shp'))
+            parcel = gpd.read_file(os.path.join(pFilePath,'Parcels.shp'))
             print(fips)
             parcel.to_crs(crs='ESRI:102005', inplace=True)
-            #buildings = gpd.read_file(os.path.join(pFilePath,fips+'_Buildings.gpkg'),layer=fips+'_Buildings')
-            buildings = gpd.read_file(os.path.join(pFilePath,fips+'_buildings.shp'))
+            buildings = gpd.read_file(os.path.join(pFilePath,fips+'_Buildings.gpkg'),layer=fips+'_Buildings')
+            #buildings = gpd.read_file(os.path.join(pFilePath,fips+'_buildings.shp'))
             buildings.to_crs(crs='ESRI:102005', inplace=True)
-            parcel = parcelPreFilter(parcel,buildings)  
+            parcel = parcelPreFilter(parcel,buildings)
             #parcel = parcelPreFilter(parcel)
             parcel['UNIQID'] = np.random.randint(low=1, high=1000000000, size=len(parcel))
             #run on COSTAR mhp data:
