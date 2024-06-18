@@ -255,3 +255,12 @@ to do:
 
 Also to do:
 -change crs for Hawaii and Alaska
+
+
+6/18/24
+-parcel tester is working
+-to do:
+-change crs for hawaii and Alaska
+-run inventory checks on 2021 and 2022 parcel data
+-git rid of LA county and Harris county tx in 2021 and 2022 data
+-can't find my inventory script

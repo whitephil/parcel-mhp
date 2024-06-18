@@ -3,10 +3,13 @@ import os
 import csv
 import sys
 from zipfile import ZipFile
+from glob import glob
+import shutil
 
 def areaComp(zipSHP,county):
     parcels = gpd.read_file(zipSHP)
     parcels.to_crs(crs='ESRI:102003', inplace=True)
+    parcels.drop_duplicates(subset=['geometry'], inplace=True)
     county_area = county.iloc[0]['geometry'].area
     parcels_area = parcels['geometry'].area.sum()
 
@@ -15,19 +18,28 @@ def areaComp(zipSHP,county):
 def parcelAreaCheck(data_dir,year,fips,counties):
     zipPath = os.path.join(data_dir,fr'parcelAtlas{year}/ParcelAtlas{year}/{fips}.zip')
     county = counties.loc[counties['GEOID10']==fips].copy()
-    print(len(county))
+    print(zipPath)
     if os.path.exists(zipPath):
-        if f'{fips}/parcels.shp' in ZipFile(zipPath).namelist():
+        nameList = ZipFile(zipPath).namelist()
+        if f'{fips}/parcels.shp' in nameList:
             zipSHP = zipPath+f'!{fips}/parcels.shp'
             areaDiff = areaComp(zipSHP,county)
-        elif f'{fips}/Parcels.shp' in ZipFile(zipPath).namelist():
+        elif f'{fips}/Parcels.shp' in nameList:
             zipSHP = zipPath+f'!{fips}/Parcels.shp'
+            areaDiff = areaComp(zipSHP,county)
+        elif f'parcels.shp' in nameList:
+            zipSHP = zipPath+f'!parcels.shp'
+            areaDiff = areaComp(zipSHP,county)
+        elif f'Parcels.shp' in nameList:
+            zipSHP = zipPath+f'!Parcels.shp'
             areaDiff = areaComp(zipSHP,county)
         else:
             areaDiff = False
+            zipSHP = False
     else:
         areaDiff = False
-    return areaDiff
+        zipSHP = False
+    return zipSHP, areaDiff
 
 fips = sys.argv[1].strip()
 #data_dir = r'/scratch/alpine/phwh9568'
@@ -41,25 +53,44 @@ counties.to_crs(crs=crs, inplace=True)
 years = ['2021','2022','2023']
 areaDict = {}
 for year in years:
-    diff = parcelAreaCheck(data_dir,year,fips,counties)
+    path, diff = parcelAreaCheck(data_dir,year,fips,counties)
     print(diff)
     if diff != False:
-        areaDict[year] = diff
+        areaDict[path] = diff
     else:
         continue
 
-parcelYear = min(areaDict,key=areaDict.get)
+print(areaDict)
 
-parcel_dir = os.path.join(data_dir,f'parcelAtlas{parcelYear}/ParcelAtlas{parcelYear}')
+#parcelYear = min(areaDict,key=areaDict.get)
 
-z = os.path.join(parcel_dir,fips+'.zip')
+parcelPath = min(areaDict, key=areaDict.get)
+z, shpPath = parcelPath.split('!')
+print('shpPath:', shpPath)
 
+#parcel_dir = os.path.join(data_dir,f'parcelAtlas{parcelYear}/ParcelAtlas{parcelYear}')
+
+#z = os.path.join(parcel_dir,fips+'.zip')
+parcelYear = z.split('/')[-2][-4:]
+print(parcelYear)
 with ZipFile(z,'r') as zipped:
-    stateDir = os.path.join(data_dir,'State_' + z.split('/')[-1][0:2])
-    countyDir = z.split("/")[-1].split('.')[0]
-    zipped.extractall(os.path.join(stateDir,countyDir))
-    
-    with open(os.path.join(countyDir,'parcelYear.csv'),'w', newline='', encoding='utf-8') as f:
+    stateDir = os.path.join(data_dir,'State_' + fips[0:2])
+    countyDir = os.path.join(stateDir,fips)
+    zipped.extractall(countyDir)
+    if fips in shpPath:
+        shps = glob(os.path.join(countyDir,fips,'*arcel*'))
+        print(shps)
+        for shp in shps:
+            name = (shp.split('\\')[-1].lower())
+            os.rename(shp, os.path.join(countyDir,name))
+        shutil.rmtree(os.path.join(countyDir,fips))
+    shps = glob(os.path.join(countyDir,'*arcel*'))
+    for shp in shps:
+        name = (shp.split('\\'))[-1].lower()
+        os.rename(shp,os.path.join(countyDir,name))
+            
+
+    with open(os.path.join(stateDir,fips,'parcelYear.csv'),'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow(['COUNTY_FIPS','YEAR'])
         writer.writerow([fips,parcelYear])
