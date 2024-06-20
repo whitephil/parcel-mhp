@@ -5,6 +5,10 @@ import sys
 from zipfile import ZipFile
 from glob import glob
 import shutil
+import warnings
+
+gpd.options.io_engine = "pyogrio"
+warnings.filterwarnings('ignore')
 
 def areaComp(zipSHP,county):
     parcels = gpd.read_file(zipSHP)
@@ -13,7 +17,7 @@ def areaComp(zipSHP,county):
     county_area = county.iloc[0]['geometry'].area
     parcels_area = parcels['geometry'].area.sum()
 
-    return abs(county_area-parcels_area)
+    return (parcels_area/county_area)*100
 
 def parcelAreaCheck(data_dir,year,fips,counties):
     zipPath = os.path.join(data_dir,fr'parcelAtlas{year}/ParcelAtlas{year}/{fips}.zip')
@@ -45,7 +49,13 @@ fips = sys.argv[1].strip()
 #data_dir = r'/scratch/alpine/phwh9568'
 data_dir = r'C:\Users\phwh9568\Data\ParcelAtlas'
 countiesPath = os.path.join(data_dir,'tl_2010_us_county10.gpkg')
-crs = 'ESRI:102003'
+
+if fips[0:2] == '02':
+    crs = 'EPSG:6393'
+elif fips[0:2] == '15':
+    crs = 'ESRI:102007'
+else:
+    crs = 'ESRI:102003'
 
 counties = gpd.read_file(countiesPath, dtype={'STATEFP':str, 'COUNTYFP':str, 'GEOID10':str})
 counties.to_crs(crs=crs, inplace=True)
@@ -64,7 +74,8 @@ print(areaDict)
 
 #parcelYear = min(areaDict,key=areaDict.get)
 
-parcelPath = min(areaDict, key=areaDict.get)
+parcelPath = max(areaDict, key=areaDict.get)
+diff = areaDict[parcelPath]
 z, shpPath = parcelPath.split('!')
 print('shpPath:', shpPath)
 
@@ -92,5 +103,5 @@ with ZipFile(z,'r') as zipped:
 
     with open(os.path.join(stateDir,fips,'parcelYear.csv'),'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        writer.writerow(['COUNTY_FIPS','YEAR'])
-        writer.writerow([fips,parcelYear])
+        writer.writerow(['COUNTY_FIPS','YEAR','PERC'])
+        writer.writerow([fips,parcelYear,diff])

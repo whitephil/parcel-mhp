@@ -263,4 +263,12 @@ Also to do:
 -change crs for hawaii and Alaska
 -run inventory checks on 2021 and 2022 parcel data
 -git rid of LA county and Harris county tx in 2021 and 2022 data
--can't find my inventory script
+-can't find my inventory script...  got it: zipcheck.py
+
+6/20/24
+-Note that you need to combine the 3 shapefiles for cook county illinois (chicago) 
+fips 17032 into one GPKG and modify pipeline script. needs to be some combination of 2023 and 2021(?)
+-Ditto San Diego, use 2021 data
+-resolved all(I think) inventory issues w 2021 2022 data
+-fixed crs for Hawaii and Alaska (have not tested...)
+-Double check LA county 06037 and Harris County 48201

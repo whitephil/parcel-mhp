@@ -5,9 +5,9 @@ import pandas as pd
 
 
 def inventory(row, dataDir, fipsList):
-    if f'{row.FIPS}.zip' in fipsList:
+    if f'{row.FIPS}.ZIP' in fipsList:
         try:
-            ZipFile(os.path.join(dataDir,f'{row.FIPS}.zip'))
+            ZipFile(os.path.join(dataDir,f'{row.FIPS}.ZIP'))
         except Exception as e:
             if str(e) == 'File is not a zip file':
                 return False
@@ -17,8 +17,8 @@ def inventory(row, dataDir, fipsList):
     
 def shpChk(row, ext, dataDir):
     if row.Parcels_Present == True:
-        nameList = ZipFile(os.path.join(dataDir,f'{row.FIPS}.zip')).namelist()
-        if f'parcels.{ext}' in [n.lower() for n in nameList]:
+        nameList = ZipFile(os.path.join(dataDir,f'{row.FIPS}.ZIP')).namelist()
+        if f'{row.FIPS}/parcels.{ext}' in [n.lower() for n in nameList]:
             return True
         else:
             print(os.path.join(dataDir,f'{row.FIPS}.zip',f'parcels.{ext} is missing'))
@@ -26,12 +26,12 @@ def shpChk(row, ext, dataDir):
     else:
         return 'NA'
 
-dataDir = r'F:\ParcelAtlas2023'
-outPut = 'inventory.csv'
+dataDir = r'D:\ParcelAtlas'
+outPut = 'inventory2021.csv'
 countyFips = pd.read_csv(os.path.join(dataDir,'US_county_fips.csv'),encoding='utf-8', dtype={'FIPS':str})
-dirList = glob(dataDir+'/*.zip')
+dirList = glob(os.path.join(dataDir+'\*.ZIP'))
 fipsList = [f.split("\\")[-1] for f in dirList]
-
+print(fipsList)
 
 exts = ['shp','dbf','shx','prj']
 
