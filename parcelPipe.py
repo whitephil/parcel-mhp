@@ -54,8 +54,8 @@ def costar_prepper(costarPath):
     #fipsCodes = pd.read_csv(fipsPath, dtype={'fips':str}, encoding='iso-8859-1')
     mhomes = gpd.read_file(costarPath, layer='COSTAR_mhps')
     mhomes.sindex
-    columns = ['property_id', 'propertyname', 'property_address','propertycity','propertystate', 'propertycounty', 'fipscode','propertyzipcode', 'propertyzip5','latitude', 'longitude', 'costar_parcel','numberofunits', 'geometry']
-    renames = ['MH_prop_id', 'MH_prop_name', 'MH_prop_add','MH_prop_city', 'MH_prop_state', 'MH_prop_county', 'MH_COUNTY_FIPS','MH_prop_zip', 'MH_ZIP','MH_lat', 'MH_long', 'costar_parcel', 'MH_units']
+    columns = ['property_id', 'propertyname', 'property_address','propertycity','propertystate', 'propertycounty', 'fipscode', 'propertyzip5','latitude', 'longitude', 'costar_parcel','numberofunits', 'geometry']
+    renames = ['MH_prop_id', 'MH_prop_name', 'MH_prop_add','MH_prop_city', 'MH_prop_state', 'MH_prop_county', 'MH_COUNTY_FIPS', 'MH_ZIP','MH_lat', 'MH_long', 'costar_parcel', 'MH_units']
     drops = [c for c in mhomes.columns if c not in columns] 
     renames = dict(zip(columns,renames))
     mhomes.drop(drops,axis=1, inplace=True)
@@ -153,7 +153,9 @@ def sumWithin(parcels,buildings):
     parcels = parcels[cols]
     buildings['areas'] = buildings['geometry'].area
     dfsjoin = gpd.sjoin(parcels,buildings,predicate='intersects')
+    print('dfsjoin len:', len(dfsjoin))
     dfpivot = pd.pivot_table(dfsjoin,index=['ID','APN'], aggfunc={'FINDEX':len,'areas':'mean'}).reset_index()
+    print('dfpivot len:',len(dfpivot))
     #dfpivot = pd.pivot_table(dfsjoin,index=['ID','APN'], aggfunc={'FID':len,'areas':'mean'}).reset_index()
     dfpolynew = parcels.merge(dfpivot, how='left', on='ID')
     if 'FINDEX' in dfpolynew: #remember to switch to 'FINDEX' when running in future
@@ -171,6 +173,7 @@ def sumWithin(parcels,buildings):
 def parcelPreFilter(parcel,buildings):
     '''
     -removes duplicated geometries (parcels stacked on one another)
+    -removes None type geometries
     -counts buildings within parcels and calculates mean building size per parcel
     -simplifies geometries (which helps to standardize the frequency of vertexes in polygon)
     -Counts number of vertices in interior geometries and exterior geometries
@@ -190,6 +193,9 @@ def parcelPreFilter(parcel,buildings):
 
     '''
     parcel.drop_duplicates(subset=['geometry'], inplace=True)
+    parcel.drop(parcel[parcel['geometry']==None].index, inplace=True)
+    print(len(parcel))
+    print(parcel['APN'])
     parcel = sumWithin(parcel,buildings)
     parcel['geometry'] = parcel['geometry'].simplify(1.0)
     parcel['intLen'] = parcel.apply(lambda row: interiorLen(row.geometry), axis=1)
@@ -197,9 +203,14 @@ def parcelPreFilter(parcel,buildings):
     parcel.reset_index(inplace=True)
     parcel['extLen1'] = parcel.apply(lambda row: exteriorLen(row.geometry), axis=1)
     parcel['extZscore1'] = np.abs(stats.zscore(parcel['extLen1']))
+    print(len(parcel))
     parcel = parcel.drop(parcel[(parcel['extZscore1'] > 3) & (parcel['Sum_Within'] < 10)].index) #dropping outlier geometries
+    print(len(parcel))
+    print(len(parcel.loc[parcel['Sum_Within'] < 5]))
     parcel.drop(parcel[parcel['Sum_Within'] < 5].index, inplace=True) #change to 20 or 30 later? nevermind that
+    print(len(parcel))
     parcel.drop(parcel[parcel['mnBlgArea'] > 175].index, inplace=True)
+    print(len(parcel))
     parcel.reset_index(inplace=True)
     columns = ['APN', 'APN2', 'OWNER', 'intLen','intZscore', 'extLen1','extZscore1', 'Sum_Within', 'mnBlgArea', 'geometry']
     drops = [c for c in parcel.columns if c not in columns]
@@ -304,6 +315,7 @@ def parcelCostarJoin(parcel,costarHomes):
     """
 
     apnParcel = apnJoin(parcel,costarHomes)
+    len(apnParcel)
     phomes = nearSelect(parcel,costarHomes)
     phomes = pd.concat([apnParcel,phomes])
     #DROP duplicates if APN is null?
@@ -526,6 +538,7 @@ def parcelWorker(pFilePath):
                mobile home data, buildings data.
     
     """    
+    pFilePath = pFilePath.strip()
     fips = pFilePath.split('/')[-1] #on linux should be '/'
     if fips[0:2] == '02':
         crs = 'EPSG:6393'
@@ -543,9 +556,19 @@ def parcelWorker(pFilePath):
         writer = csv.writer(f)
         writer.writerow(['COUNTY_FIPS','PROBLEM','NOTE_1','NOTE_2'])
         if os.path.exists(costarPath) or os.path.exists(hifldPath):
-            parcel = gpd.read_file(os.path.join(pFilePath,'Parcels.shp'))
+            if fips == '06037':
+                parcel = gpd.read_file(os.path.join(pFilePath, f'{fips}_parcels.gpkg'), layer='parcels')
+            elif fips == '17031':
+                parcel = gpd.read_file(os.path.join(pFilePath, f'{fips}_parcels.gpkg'), layer='parcels')
+            elif fips == '48201':
+                parcel = gpd.read_file(os.path.join(pFilePath, f'{fips}_parcels.gpkg'), layer='parcels')
+            else:
+                parcel = gpd.read_file(os.path.join(pFilePath,'parcels.shp'))
             print(fips)
             parcel.to_crs(crs=crs, inplace=True)
+            if parcel['APN'].unique() == None:
+                parcel['APN'] = np.random.randint(low=1, high=1000000000, size=len(parcel)).astype(str)
+                parcel['APN'] = 'F' + parcel['APN']
             buildings = gpd.read_file(os.path.join(pFilePath,fips+'_Buildings.gpkg'),layer=fips+'_Buildings')
             #buildings = gpd.read_file(os.path.join(pFilePath,fips+'_buildings.shp'))
             buildings.to_crs(crs=crs, inplace=True)
@@ -600,13 +623,21 @@ def unionWorker(pFilePath):
                and census blocks data.
 
     """
-    fips = pFilePath.split('\\')[-1]
+    pFilePath = pFilePath.strip()
+    fips = pFilePath.split('/')[-1]
     if os.path.exists(os.path.join(pFilePath,fips+'.gpkg')) == True:
         parcelLayers = pyogrio.list_layers(os.path.join(pFilePath,fips+'.gpkg'))            
         blockLayers = pyogrio.list_layers(os.path.join(pFilePath,fips+'_blocks.gpkg'))
+        if fips[0:2] == '02':
+            crs = 'EPSG:6393'
+        elif fips[0:2] == '15':
+            crs = 'ESRI:102007'
+        else:
+            crs = 'ESRI:102005'
         for blayer in blockLayers:
             year = blayer[0][-2:]
             blocks = gpd.read_file(os.path.join(pFilePath,f'{fips}_blocks.gpkg'), layer=blayer[0])
+            blocks.to_crs(crs=crs, inplace=True)
             if 'COSTAR_parcels' in parcelLayers:
                 mhpVersion = 'COSTAR'
                 phomes = gpd.read_file(os.path.join(pFilePath,fips+'.gpkg'), layer='COSTAR_parcels')
@@ -627,7 +658,8 @@ def mergeWorker(pFilePath):
     ----------
     pFilePath: file path to all county-level data layers
     """
-    fips = pFilePath.split('\\')[-1]
+    pFilePath = pFilePath.strip()
+    fips = pFilePath.split('/')[-1]
     costarName = f'COSTAR_{fips}.csv'
     hifldName = f'HIFLD_{fips}.csv'
     if os.path.exists(os.path.join(pFilePath, costarName)):

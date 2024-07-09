@@ -271,4 +271,113 @@ fips 17032 into one GPKG and modify pipeline script. needs to be some combinatio
 -Ditto San Diego, use 2021 data
 -resolved all(I think) inventory issues w 2021 2022 data
 -fixed crs for Hawaii and Alaska (have not tested...)
--Double check LA county 06037 and Harris County 48201
+-Double check LA county 06037 and Harris County 48201--these are fine. got rid of 21 and 22 for both. 
+-LA county 2023 complete, only southern half of Harris County in all three datasets. Oh well?
+
+6/28/24
+Problem counties:
+LA county: 06037: Acquired, has APN. Saved as GPKG, not yet uploaded
+San Diego county: 06073 (need to combine N & S): Acquired, has APN. Uploaded as shp. DONE.
+Wayne County MI: 26163: Acquired, no APN column. APN column added(empty), uploaded as shp. DONE.
+Cook County IL: 17031: Acquired, no APN column. Saved as GPKG, added APN col(empty), not yet uploaded.
+Harris County TX: 48201: Acquired, no APN column. Saved as GPKG, added APN col(empty), not yet uploaded
+
+To do:
+-Fix problem counties--done except upload gpkgs: DONE
+-update inventory script to include final output layers: DONE
+-Add south dakota costar transactions: DONE
+-remove problem parcel data county directories from scratch?: Nah
+-remove problem counties from US_counties.txt: I think it's fine to leave them
+... should be ready to run at that point? 
+
+Bad data counties:
+17137, empty shp
+21049, bad data
+21093, empty shp 
+21111, bad data 
+26163, empty shp fixed
+35059, empty shp 
+36025, bad data 
+46003, empty shp 
+46009, bad data 
+46045, bad data 
+48125, empty shp 
+56041, bad zip file
+
+
+7/1/24:
+Okay, ran main workflow on Colorado, noticed Larimer county 08069 was missing. Turns out this is not in the 2023 inventory but in earlier. 
+Need to find out which counties might be missing from the 2023 inventory that are present in earlier years, 
+then rerun parcel_test/split, buildings getter, blocks getter, and then mobile home splitter on just these counties.
+Goddamn you parcelatlas fuck heads.
+
+The following 2023 counties were missing but present in 21 or 22:
+06047
+06053
+06059
+06063
+06109
+08047
+08069
+10003
+10005
+11001
+15005
+17067
+18157
+18163
+19083
+22013
+32003
+38105
+55029
+
+Need to get buildings and census blocks for all of the above... 
+
+While fixing above, discovered that 2022 zip files had .ZIP extension, and were not being analyzed by the parcel_tester.py. 
+
+7/2 to do:
+Rerun parcel_tester.py on ALL counties. Replace US_counties.txt with updated one that includes the above 
+-note: exempt 18157 from the list for parcel_tester, but add back for subsequent steps
+When rerunning parcel_tester, need to delete all the old parcels.shp files from directories, but need to keep the following then pass on them:
+-06037, all good
+-06073, all good
+-26163, all good
+-17031, all good
+-48201, all good
+-18157, needs buildings, blocks, hifld, costar
+--Just remove these from the fips input list, get rid of loop in woops.py and delete using sbatch array
+DONE
+--Then get buildings and blocks for the list above.
+DONE
+--Then get costar and hifld mhp points into place for the list above.
+DONE
+--Then ready?
+
+I think we're ready.
+
+7/3:
+ran all counties. Some problems, but mostly worked.
+-None type geometries throw error during prefilter int/ext length function
+    -should be fixed by dropping rows with None type geoms
+-alaska/hawaii blocks in wrong crs, so no unions.
+    -should be fixed by if/el statements for crs in unionWorker func
+-parcels in gpkgs didn't work.
+
+Next:
+- run ones that did not produce {fips}.gpkg
+- LA worked. Problem was OOM error.
+- problem is with empty APN columns. See line 156.
+    -perhaps a fake 'APN'? Or, If APNs are None, use different column for pivot?
+
+7/9/
+
+-looking at counties that had COSTAR or HIFLD data but did not get a match...
+-NYC counties: not legit, all of the parcels where these supposed parks are were filtered out
+-Philly: 1, but seems long abandoned?
+
+-Lake County IL: Lake County OH was in the zip folder, not IL. IL is an esri parcel fabric,
+ need to open up arc to get it I guess?
+
+To do:
+find out how many costar mhps are in each of thse problem counties. That can help as a decision point.
