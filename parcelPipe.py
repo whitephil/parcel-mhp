@@ -566,9 +566,10 @@ def parcelWorker(pFilePath):
                 parcel = gpd.read_file(os.path.join(pFilePath,'parcels.shp'))
             print(fips)
             parcel.to_crs(crs=crs, inplace=True)
-            if parcel['APN'].unique() == None:
-                parcel['APN'] = np.random.randint(low=1, high=1000000000, size=len(parcel)).astype(str)
-                parcel['APN'] = 'F' + parcel['APN']
+            if len(parcel['APN'].unique()) == 1:
+                if parcel['APN'].unique() == None:
+                    parcel['APN'] = np.random.randint(low=1, high=1000000000, size=len(parcel)).astype(str)
+                    parcel['APN'] = 'F' + parcel['APN']
             buildings = gpd.read_file(os.path.join(pFilePath,fips+'_Buildings.gpkg'),layer=fips+'_Buildings')
             #buildings = gpd.read_file(os.path.join(pFilePath,fips+'_buildings.shp'))
             buildings.to_crs(crs=crs, inplace=True)

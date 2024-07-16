@@ -11,17 +11,36 @@ gpd.options.io_engine = "pyogrio"
 warnings.filterwarnings('ignore')
 
 def areaComp(zipSHP,county):
-    parcels = gpd.read_file(zipSHP)
-    parcels.to_crs(crs='ESRI:102003', inplace=True)
-    parcels.drop_duplicates(subset=['geometry'], inplace=True)
-    county_area = county.iloc[0]['geometry'].area
-    parcels_area = parcels['geometry'].area.sum()
-
-    return (parcels_area/county_area)*100
+    print(zipSHP)
+    try:
+        parcels = gpd.read_file(zipSHP)
+        print('check 1')
+        parcels.to_crs(crs='ESRI:102003', inplace=True)
+        print('check 2')
+        parcels.drop_duplicates(subset=['geometry'], inplace=True)
+        print('check 3')
+        county_area = county.iloc[0]['geometry'].area
+        parcels_area = parcels['geometry'].area.sum()
+        print('parcel area:',parcels_area)
+        perc = (parcels_area/county_area)*100
+        print('perc:',perc)
+        percDiff = abs(100-perc)
+        print('percDiff:',percDiff)
+        return percDiff
+    
+    except Exception as e:
+        if type(e).__name__ == 'DataSourceError':
+            return (1000)
+        
+        elif type(e).__name__ == 'GEOSException':
+            return (1000)
+        else: 
+            print(e)
+            return('what the fuck')
 
 def parcelAreaCheck(data_dir,year,fips,counties):
     zipPath = os.path.join(data_dir,fr'parcelAtlas{year}/ParcelAtlas{year}/{fips}.zip')
-    county = counties.loc[counties['GEOID10']==fips].copy()
+    county = counties.loc[counties['GEOID']==fips].copy()
     print(zipPath)
     if os.path.exists(zipPath):
         nameList = ZipFile(zipPath).namelist()
@@ -46,8 +65,8 @@ def parcelAreaCheck(data_dir,year,fips,counties):
     return zipSHP, areaDiff
 
 fips = sys.argv[1].strip()
-#data_dir = r'/scratch/alpine/phwh9568'
-data_dir = r'C:\Users\phwh9568\Data\ParcelAtlas'
+data_dir = r'/scratch/alpine/phwh9568'
+#data_dir = r'C:\Users\phwh9568\Data\ParcelAtlas'
 countiesPath = os.path.join(data_dir,'tl_2010_us_county10.gpkg')
 
 if fips[0:2] == '02':
@@ -57,7 +76,7 @@ elif fips[0:2] == '15':
 else:
     crs = 'ESRI:102003'
 
-counties = gpd.read_file(countiesPath, dtype={'STATEFP':str, 'COUNTYFP':str, 'GEOID10':str})
+counties = gpd.read_file(countiesPath, dtype={'STATEFP':str, 'COUNTYFP':str, 'GEOID':str})
 counties.to_crs(crs=crs, inplace=True)
 
 years = ['2021','2022','2023']
@@ -74,7 +93,7 @@ print(areaDict)
 
 #parcelYear = min(areaDict,key=areaDict.get)
 
-parcelPath = max(areaDict, key=areaDict.get)
+parcelPath = min(areaDict, key=areaDict.get)
 diff = areaDict[parcelPath]
 z, shpPath = parcelPath.split('!')
 print('shpPath:', shpPath)
@@ -92,12 +111,16 @@ with ZipFile(z,'r') as zipped:
         shps = glob(os.path.join(countyDir,fips,'*arcel*'))
         print(shps)
         for shp in shps:
-            name = (shp.split('\\')[-1].lower())
+            name = (shp.split('/')[-1].lower())
+            print(shp)
+            print(os.path.join(countyDir,name))
             os.rename(shp, os.path.join(countyDir,name))
         shutil.rmtree(os.path.join(countyDir,fips))
     shps = glob(os.path.join(countyDir,'*arcel*'))
     for shp in shps:
-        name = (shp.split('\\'))[-1].lower()
+        name = (shp.split('/'))[-1].lower()
+        print(shp)
+        print(os.path.join(countyDir,name))
         os.rename(shp,os.path.join(countyDir,name))
             
 
