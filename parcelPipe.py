@@ -563,7 +563,11 @@ def parcelWorker(pFilePath):
             elif fips == '48201':
                 parcel = gpd.read_file(os.path.join(pFilePath, f'{fips}_parcels.gpkg'), layer='parcels')
             else:
-                parcel = gpd.read_file(os.path.join(pFilePath,'parcels.shp'))
+                try:
+                    parcel = gpd.read_file(os.path.join(pFilePath,'parcels.shp'))
+                except Exception as e:
+                    if type(e).__name__=='UnicodeDecodeError':
+                        parcel = gpd.read_file(os.path.join(pFilePath,'parcels.shp'),encoding='iso-8859-1')
             print(fips)
             parcel.to_crs(crs=crs, inplace=True)
             if len(parcel['APN'].unique()) == 1:
