@@ -199,11 +199,12 @@ def parcelPreFilter(parcel,buildings):
     parcel = sumWithin(parcel,buildings)
     parcel['geometry'] = parcel['geometry'].simplify(1.0)
     parcel['intLen'] = parcel.apply(lambda row: interiorLen(row.geometry), axis=1)
-    parcel['intZscore'] = np.abs(stats.zscore(parcel['intLen']))#dropping outlier inner geometries
+    parcel['intZscore'] = np.abs(stats.zscore(parcel['intLen']))
+    parcel.drop(parcel[parcel.intLen >= 20].index, inplace=True)#dropping outlier inner geometries
     parcel.reset_index(inplace=True)
     parcel['extLen1'] = parcel.apply(lambda row: exteriorLen(row.geometry), axis=1)
     parcel['extZscore1'] = np.abs(stats.zscore(parcel['extLen1']))
-    print(len(parcel))
+    parcel.drop(parcel[parcel.extLen1 >= 1000].index, inplace=True)#dropping outlier exterior geometries
     parcel = parcel.drop(parcel[(parcel['extZscore1'] > 3) & (parcel['Sum_Within'] < 10)].index) #dropping outlier geometries
     print(len(parcel))
     print(len(parcel.loc[parcel['Sum_Within'] < 5]))

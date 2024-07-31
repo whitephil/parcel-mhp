@@ -381,3 +381,65 @@ Next:
 
 To do:
 find out how many costar mhps are in each of thse problem counties. That can help as a decision point.
+
+7/17:
+down to only a handful of rando counties broken, all <10 costar parks 
+(95 parks total across 45 counties)
+
+to do:
+-compile county level data into national files.
+
+
+7/19:
+Discovered random line removing outlier interior geoms was
+missing from the parcelPipe.py. 
+-Rerunning everything as a result.
+
+7/29:
+Everything has run and compiling scripts work.
+-need to drop exterior lens over 1000
+-should I just make the list and run only some those counties, then recompile? yes. any reason not to? 
+12095
+37181
+45015
+38053
+45075
+24023
+42007
+39149
+54109
+32003
+37045
+13021
+22085
+01087
+22085
+53067
+22045
+21151
+47073
+12069
+42021
+19005
+12107
+Well, it makes for inconsistency in how all these data were processed since it affects the z score.
+shit.
+
+throw out:
+Mitchell County NC 37121
+Tipton County IN 18159
+Perry County IN 18123
+Switzerland County IN 18155
+Winnebago County WI 55139
+Grand Isle County VT 50013
+Sargent County ND 38081
+Calcasieu Parish LA 22019
+
+7/30.
+Okay, reran everything. Dropped parcels with exterior len greater than 1000, then 
+
+oh fuck. I should have dropped the 1000+ extLen1 rows THEN calculated zscores.
+
+7/31
+Okay, reran everything again. Now ready to combine everything and ship off.
+
