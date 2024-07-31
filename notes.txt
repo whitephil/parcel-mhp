@@ -442,4 +442,7 @@ oh fuck. I should have dropped the 1000+ extLen1 rows THEN calculated zscores.
 
 7/31
 Okay, reran everything again. Now ready to combine everything and ship off.
+Shipped off to Emily and Lauren. Yay!
 
+To do:
+readme doc
